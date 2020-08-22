@@ -171,20 +171,14 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
 
 extern "C" 
 {
-#ifdef WIN32
-    #define EXPORT_FUNC __declspec(dllexport)
-#else
-    #define EXPORT_FUNC 
-#endif
-
-    EXPORT_FUNC bool InitShaderCompiler()
+    bool InitShaderCompiler()
     {
         init_default_build_in_resource();
 
         return glslang::InitializeProcess();
     }
 
-    EXPORT_FUNC void CloseShaderCompiler()
+    void CloseShaderCompiler()
     {
         glslang::FinalizeProcess();
     }
@@ -233,12 +227,12 @@ extern "C"
         }
     };//struct SPVData
 
-    EXPORT_FUNC void FreeSPVData(SPVData *spv)
+    void FreeSPVData(SPVData *spv)
     {
         delete spv;
     }
 
-    EXPORT_FUNC SPVData *GLSL2SPV(const uint32_t shader_type,const char *shader_source)
+    SPVData *GLSL2SPV(const uint32_t shader_type,const char *shader_source)
     {
         EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_type);
 
@@ -276,7 +270,7 @@ extern "C"
         return(new SPVData(spirv));
     }
         
-    EXPORT_FUNC uint32_t GetShaderStageFlagByExtName(const char *ext_name)
+    uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
         if (stricmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
         if (stricmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
@@ -289,5 +283,36 @@ extern "C"
         {
             return 0;
         }
+    }
+        
+    struct GLSLCompilerInterface
+    {
+        bool        (*Init)();
+        void        (*Close)();
+
+        uint32_t    (*GetType)(const char *ext_name);
+        SPVData *   (*Compile)(const uint32_t type,const char *source);
+
+        void        (*Free)(SPVData *);
+    };
+
+    static GLSLCompilerInterface plug_in_interface
+    {
+        &InitShaderCompiler,
+        &CloseShaderCompiler,
+        &GetShaderStageFlagByExtName,
+        &GLSL2SPV,
+        &FreeSPVData
+    };
+    
+#ifdef WIN32
+    #define EXPORT_FUNC __declspec(dllexport)
+#else
+    #define EXPORT_FUNC 
+#endif
+
+    EXPORT_FUNC GLSLCompilerInterface *GetInterface()
+    {
+        return &plug_in_interface;
     }
 }//extern "C"
