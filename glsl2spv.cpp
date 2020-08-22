@@ -1,8 +1,33 @@
-﻿#include<vulkan/vulkan.h>
-#include<glslang/SPIRV/GlslangToSpv.h>
+﻿#include<glslang/SPIRV/GlslangToSpv.h>
 #include<glslang/Include/ResourceLimits.h>
 #include<vector>
 #include<iostream>
+
+typedef enum VkShaderStageFlagBits {
+    VK_SHADER_STAGE_VERTEX_BIT = 0x00000001,
+    VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT = 0x00000002,
+    VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT = 0x00000004,
+    VK_SHADER_STAGE_GEOMETRY_BIT = 0x00000008,
+    VK_SHADER_STAGE_FRAGMENT_BIT = 0x00000010,
+    VK_SHADER_STAGE_COMPUTE_BIT = 0x00000020,
+    VK_SHADER_STAGE_ALL_GRAPHICS = 0x0000001F,
+    VK_SHADER_STAGE_ALL = 0x7FFFFFFF,
+    VK_SHADER_STAGE_RAYGEN_BIT_KHR = 0x00000100,
+    VK_SHADER_STAGE_ANY_HIT_BIT_KHR = 0x00000200,
+    VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR = 0x00000400,
+    VK_SHADER_STAGE_MISS_BIT_KHR = 0x00000800,
+    VK_SHADER_STAGE_INTERSECTION_BIT_KHR = 0x00001000,
+    VK_SHADER_STAGE_CALLABLE_BIT_KHR = 0x00002000,
+    VK_SHADER_STAGE_TASK_BIT_NV = 0x00000040,
+    VK_SHADER_STAGE_MESH_BIT_NV = 0x00000080,
+    VK_SHADER_STAGE_RAYGEN_BIT_NV = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+    VK_SHADER_STAGE_ANY_HIT_BIT_NV = VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
+    VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+    VK_SHADER_STAGE_MISS_BIT_NV = VK_SHADER_STAGE_MISS_BIT_KHR,
+    VK_SHADER_STAGE_INTERSECTION_BIT_NV = VK_SHADER_STAGE_INTERSECTION_BIT_KHR,
+    VK_SHADER_STAGE_CALLABLE_BIT_NV = VK_SHADER_STAGE_CALLABLE_BIT_KHR,
+    VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
+} VkShaderStageFlagBits;
 
 static TBuiltInResource default_build_in_resource;
 
@@ -145,22 +170,77 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
 }
 
 extern "C" 
-{        
-    bool InitShaderCompiler()
+{
+#ifdef WIN32
+    #define EXPORT_FUNC __declspec(dllexport)
+#else
+    #define EXPORT_FUNC 
+#endif
+
+    EXPORT_FUNC bool InitShaderCompiler()
     {
         init_default_build_in_resource();
 
         return glslang::InitializeProcess();
     }
 
-    void CloseShaderCompiler()
+    EXPORT_FUNC void CloseShaderCompiler()
     {
         glslang::FinalizeProcess();
     }
 
-    bool GLSL2SPV(const VkShaderStageFlagBits shader_type,const char *shader_source,std::vector<uint32_t> &spirv)
+    struct SPVData
     {
-        EShLanguage stage = FindLanguage(shader_type);
+        bool result;
+        char *log;
+        char *debug_log;
+
+        uint32_t *spv_data;
+        uint32_t spv_length;
+
+    public:
+
+        SPVData(const char *l,const char *dl)
+        {
+            result=false;
+
+            log=new char[strlen(l)+1];
+            strcpy(log,l);
+
+            debug_log=new char[strlen(dl)+1];
+            strcpy(debug_log,dl);
+
+            spv_data=nullptr;
+        }
+
+        SPVData(const std::vector<uint32_t> &spirv)
+        {
+            result=true;
+
+            log=nullptr;
+            debug_log=nullptr;
+
+            spv_length=spirv.size();
+            spv_data=new uint32_t[spv_length];
+            memcpy(spv_data,spirv.data(),spv_length*sizeof(uint32_t));
+        }
+
+        ~SPVData()
+        {
+            delete[] log;
+            delete[] debug_log;
+            delete[] spv_data;
+        }
+    };//struct SPVData
+
+    EXPORT_FUNC void FreeSPVData(SPVData *spv)
+    {
+        delete spv;
+    }
+
+    EXPORT_FUNC SPVData *GLSL2SPV(const uint32_t shader_type,const char *shader_source)
+    {
+        EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_type);
 
         glslang::TShader shader(stage);
         glslang::TProgram program;
@@ -174,12 +254,8 @@ extern "C"
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
 
-        if (!shader.parse(&Resources, 100, false, messages)) 
-        {
-            puts(shader.getInfoLog());
-            puts(shader.getInfoDebugLog());
-            return false;  // something didn't work
-        }
+        if (!shader.parse(&Resources, 100, false, messages))
+            return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
 
         program.addShader(&shader);
 
@@ -189,17 +265,18 @@ extern "C"
 
         if (!program.link(messages)) 
         {
-            puts(shader.getInfoLog());
-            puts(shader.getInfoDebugLog());
-            fflush(stdout);
-            return false;
+            fflush(stdout);            
+            return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
         }
 
+        std::vector<uint32_t> spirv;
+
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
-        return(true);
+        
+        return(new SPVData(spirv));
     }
         
-    VkShaderStageFlagBits GetShaderStageFlagByExtName(const char *ext_name)
+    EXPORT_FUNC uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
         if (stricmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
         if (stricmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
@@ -210,7 +287,7 @@ extern "C"
         if (stricmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
         if (stricmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
         {
-            return (VkShaderStageFlagBits)0;
+            return 0;
         }
     }
 }//extern "C"

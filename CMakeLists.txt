@@ -4,22 +4,25 @@ SET(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE)
 project(GLSLCompiler)
 
 if(MSVC)
-    SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MD")
-    SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MD")
+    SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
+    SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 
-    SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MD")
-    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MD")
+    SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
+    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
-include("FindVulkan.cmake")
+include("system_bit.cmake")
+include("output_path.cmake")
 
-include_directories(${Vulkan_INCLUDE_DIRS})
-link_directories(${Vulkan_LIBRARIES_DIR})
+add_subdirectory(SPIRV-Cross)
+add_subdirectory(SPIRV-Cross/external/glslang)
+add_subdirectory(SPIRV-Cross/external/spirv-tools)
+
+include_directories(SPIRV-Cross/external)
 
 set(VULKAN_SPIRV_LIBS   GenericCodeGen
                         glslang
-                        HLSL
                         MachineIndependent
                         OGLCompiler
                         OSDependent
