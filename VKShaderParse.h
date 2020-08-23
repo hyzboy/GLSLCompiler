@@ -1,8 +1,6 @@
 ﻿#pragma once
-#include<spirv_cross/spirv_cross.hpp>
-#include<hgl/graph/vulkan/VKFormat.h>
-
-using namespace hgl;
+#include"SPIRV-Cross/spirv_cross.hpp"
+#include<string>
 
 using SPVResVector=spirv_cross::SmallVector<spirv_cross::Resource>;
 
@@ -45,9 +43,14 @@ public:
 
 public:
 
-    const AnsiString GetName(const spirv_cross::Resource &res)const
+    const std::string &GetName(const spirv_cross::Resource &res)const
     {
-        return AnsiString(compiler->get_name(res.id).c_str());
+        return compiler->get_name(res.id);
+    }
+
+    const uint32_t GetSet(const spirv_cross::Resource &res)const
+    {
+        return compiler->get_decoration(res.id,spv::DecorationDescriptorSet);
     }
 
     const uint32_t GetBinding(const spirv_cross::Resource &res)const
@@ -60,7 +63,7 @@ public:
         return compiler->get_decoration(res.id,spv::DecorationLocation);
     }
 
-    void GetFormat(const spirv_cross::Resource &res,spirv_cross::SPIRType::BaseType *base_type,uint8 *vecsize)
+    void GetFormat(const spirv_cross::Resource &res,spirv_cross::SPIRType::BaseType *base_type,uint8_t *vecsize)
     {
         const spirv_cross::SPIRType &type=compiler->get_type(res.type_id);
 

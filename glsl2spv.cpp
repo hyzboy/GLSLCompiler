@@ -1,5 +1,7 @@
 ﻿#include<glslang/SPIRV/GlslangToSpv.h>
 #include<glslang/Include/ResourceLimits.h>
+#include"SPIRV-Cross/spirv_common.hpp"
+#include"VKShaderParse.h"
 #include<vector>
 #include<iostream>
 
@@ -28,6 +30,28 @@ typedef enum VkShaderStageFlagBits {
     VK_SHADER_STAGE_CALLABLE_BIT_NV = VK_SHADER_STAGE_CALLABLE_BIT_KHR,
     VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
 } VkShaderStageFlagBits;
+
+typedef enum VkDescriptorType {
+    VK_DESCRIPTOR_TYPE_SAMPLER = 0,
+    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 1,
+    VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE = 2,
+    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE = 3,
+    VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER = 4,
+    VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER = 5,
+    VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER = 6,
+    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 7,
+    VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC = 8,
+    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC = 9,
+    VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT = 10,
+    VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT = 1000138000,
+    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR = 1000165000,
+    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+    VK_DESCRIPTOR_TYPE_MAX_ENUM = 0x7FFFFFFF
+} VkDescriptorType;
+
+constexpr uint32_t VK_DESCRIPTOR_TYPE_COUNT =VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+                                            -VK_DESCRIPTOR_TYPE_SAMPLER
+                                            +1;
 
 static TBuiltInResource default_build_in_resource;
 
@@ -183,6 +207,34 @@ extern "C"
         glslang::FinalizeProcess();
     }
 
+    struct ShaderStage
+    {
+        char name[128];
+        uint8_t location;
+        uint8_t base_type;
+        uint8_t vec_size;
+    };//
+
+    struct ShaderStageData
+    {
+        uint32_t count;
+        ShaderStage *items;
+    };
+
+    struct ShaderResource
+    {
+        char name[128];
+
+        uint8_t set;
+        uint8_t binding;
+    };
+
+    struct ShaderResourceData
+    {
+        uint32_t count;
+        ShaderResource *items;
+    };
+
     struct SPVData
     {
         bool result;
@@ -191,6 +243,26 @@ extern "C"
 
         uint32_t *spv_data;
         uint32_t spv_length;
+
+        ShaderStageData input,output;
+        ShaderResourceData resource[VK_DESCRIPTOR_TYPE_COUNT];
+
+        void Init()
+        {
+            memset(&input,0,sizeof(ShaderStageData));
+            memset(&output,0,sizeof(ShaderStageData));
+
+            memset(&resource,0,sizeof(resource));
+        }
+
+        void Clear()
+        {
+            for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
+                delete[] resource[i].items;
+
+            delete[] input.items;
+            delete[] output.items;
+        }
 
     public:
 
@@ -205,6 +277,8 @@ extern "C"
             strcpy(debug_log,dl);
 
             spv_data=nullptr;
+
+            Init();
         }
 
         SPVData(const std::vector<uint32_t> &spirv)
@@ -217,10 +291,14 @@ extern "C"
             spv_length=spirv.size();
             spv_data=new uint32_t[spv_length];
             memcpy(spv_data,spirv.data(),spv_length*sizeof(uint32_t));
+
+            Init();
         }
 
         ~SPVData()
         {
+            Clear();
+
             delete[] log;
             delete[] debug_log;
             delete[] spv_data;
@@ -230,6 +308,56 @@ extern "C"
     void FreeSPVData(SPVData *spv)
     {
         delete spv;
+    }
+
+    void OutputShaderStage(ShaderStageData *ssd,ShaderParse *sp,const SPVResVector &stages)
+    {
+        size_t attr_count=stages.size();
+
+        ssd->count=attr_count;
+
+        if(attr_count<=0)return;
+
+        spirv_cross::SPIRType::BaseType base_type;
+        uint8_t vec_size;
+        uint32_t location;
+        std::string name;
+
+        ssd->items=new ShaderStage[attr_count];
+        ShaderStage *ss=ssd->items;
+
+        for(const spirv_cross::Resource &si:stages)
+        {
+            sp->GetFormat(si,&base_type,&vec_size);
+
+            ss->base_type   =(uint8_t)base_type;
+            ss->vec_size    =vec_size;
+            ss->location    =sp->GetLocation(si);
+
+            strcpy(ss->name,sp->GetName(si).c_str());
+
+            ++ss;
+        }
+    }
+
+    void OutputShaderResource(ShaderResourceData *ssd,ShaderParse *sp,const SPVResVector &res)
+    {
+        size_t count=res.size();
+
+        if(count<=0)return;
+
+        ssd->count=count;
+        ssd->items=new ShaderResource[count];
+        ShaderResource *sr=ssd->items;
+
+        for(const spirv_cross::Resource &obj:res)
+        {
+            strcpy(sr->name,sp->GetName(obj).c_str());
+            sr->binding=sp->GetBinding(obj);
+            sr->set=sp->GetSet(obj);
+
+            ++sr;
+        }
     }
 
     SPVData *GLSL2SPV(const uint32_t shader_type,const char *shader_source)
@@ -266,8 +394,21 @@ extern "C"
         std::vector<uint32_t> spirv;
 
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
+
+        SPVData *spv=new SPVData(spirv);
         
-        return(new SPVData(spirv));
+        {
+            ShaderParse sp(spirv.data(),spirv.size()*sizeof(uint32_t));
+            
+            OutputShaderStage(&(spv->input),&sp,sp.GetStageInputs());
+            OutputShaderStage(&(spv->output),&sp,sp.GetStageOutputs());
+            
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampler());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
+        }
+
+        return(spv);
     }
         
     uint32_t GetShaderStageFlagByExtName(const char *ext_name)
