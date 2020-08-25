@@ -206,13 +206,42 @@ extern "C"
     {
         glslang::FinalizeProcess();
     }
+    
+    enum class VertexAttribBaseType
+    {
+        Bool=0,
+        Int,
+        UInt,
+        Float,
+        Double,
+
+        MAX=0xff
+    };//enum class VertexAttribBaseType
+
+    VertexAttribBaseType FromSPIRType(const spirv_cross::SPIRType::BaseType type)
+    {
+        if(type==spirv_cross::SPIRType::BaseType::Boolean)  return VertexAttribBaseType::Bool;
+        if(type==spirv_cross::SPIRType::BaseType::SByte
+         ||type==spirv_cross::SPIRType::BaseType::Short
+         ||type==spirv_cross::SPIRType::BaseType::Int
+         ||type==spirv_cross::SPIRType::BaseType::Int64)    return VertexAttribBaseType::Int;
+        if(type==spirv_cross::SPIRType::BaseType::UByte
+         ||type==spirv_cross::SPIRType::BaseType::UShort
+         ||type==spirv_cross::SPIRType::BaseType::UInt
+         ||type==spirv_cross::SPIRType::BaseType::UInt64)   return VertexAttribBaseType::UInt;
+        if(type==spirv_cross::SPIRType::BaseType::Half
+         ||type==spirv_cross::SPIRType::BaseType::Float)    return VertexAttribBaseType::Float;
+        if(type==spirv_cross::SPIRType::BaseType::Double)   return VertexAttribBaseType::Double;
+
+        return VertexAttribBaseType::MAX;
+    }
 
     struct ShaderStage
     {
         char name[128];
         uint8_t location;
-        uint8_t base_type;
-        uint8_t vec_size;
+        uint32_t basetype;
+        uint32_t vec_size;
     };//
 
     struct ShaderStageData
@@ -290,7 +319,8 @@ extern "C"
 
             spv_length=spirv.size();
             spv_data=new uint32_t[spv_length];
-            memcpy(spv_data,spirv.data(),spv_length*sizeof(uint32_t));
+            spv_length*=sizeof(uint32_t);
+            memcpy(spv_data,spirv.data(),spv_length);
 
             Init();
         }
@@ -330,7 +360,7 @@ extern "C"
         {
             sp->GetFormat(si,&base_type,&vec_size);
 
-            ss->base_type   =(uint8_t)base_type;
+            ss->basetype   =(uint8_t)FromSPIRType(base_type);
             ss->vec_size    =vec_size;
             ss->location    =sp->GetLocation(si);
 
