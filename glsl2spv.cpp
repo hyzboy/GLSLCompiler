@@ -443,14 +443,14 @@ extern "C"
         
     uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
-        if (stricmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
-        if (stricmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
-        if (stricmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
-        if (stricmp(ext_name,"geom") == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
-        if (stricmp(ext_name,"frag") == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
-        if (stricmp(ext_name,"comp") == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
-        if (stricmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
-        if (stricmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
+        if (strnicmp(ext_name,"vert",4) == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
+        if (strnicmp(ext_name,"tesc",4) == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
+        if (strnicmp(ext_name,"tese",4) == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
+        if (strnicmp(ext_name,"geom",4) == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
+        if (strnicmp(ext_name,"frag",4) == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
+        if (strnicmp(ext_name,"comp",4) == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
+        if (strnicmp(ext_name,"task",4) == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
+        if (strnicmp(ext_name,"mesh",4) == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
         {
             return 0;
         }
