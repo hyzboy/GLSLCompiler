@@ -407,7 +407,7 @@ extern "C"
         shader.setStrings(shaderStrings, 1);
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
 
-        if (!shader.parse(&Resources, 100, ECoreProfile, false, false, messages))
+        if (!shader.parse(&Resources, 110, ECoreProfile, false, false, messages))
             return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
 
         program.addShader(&shader);
