@@ -25,19 +25,19 @@ public:
 
 #define SHADER_PARSE_GET_RESOURCE(name,buf_name)    const SPVResVector &Get##name()const{return resource.buf_name;}
 
-    SHADER_PARSE_GET_RESOURCE(UBO,          uniform_buffers)
-    SHADER_PARSE_GET_RESOURCE(SSBO,         storage_buffers)
-    SHADER_PARSE_GET_RESOURCE(StageInputs,  stage_inputs)
-    SHADER_PARSE_GET_RESOURCE(StageOutputs, stage_outputs)
-    SHADER_PARSE_GET_RESOURCE(Sampler,      sampled_images)
-    SHADER_PARSE_GET_RESOURCE(Subpass,      subpass_inputs)
+    SHADER_PARSE_GET_RESOURCE(UBO,                       uniform_buffers)
+    SHADER_PARSE_GET_RESOURCE(SSBO,                      storage_buffers)
+    SHADER_PARSE_GET_RESOURCE(StageInputs,               stage_inputs)
+    SHADER_PARSE_GET_RESOURCE(StageOutputs,              stage_outputs)
+    SHADER_PARSE_GET_RESOURCE(ImageSampler,              sampled_images)
+    SHADER_PARSE_GET_RESOURCE(SubpassInputs,             subpass_inputs)
+    SHADER_PARSE_GET_RESOURCE(Image2D,                   storage_images)
+    SHADER_PARSE_GET_RESOURCE(PushConstant,              push_constant_buffers)
+    SHADER_PARSE_GET_RESOURCE(Image,                     separate_images)
+    SHADER_PARSE_GET_RESOURCE(Sampler,                   separate_samplers)
 
-    //SmallVector<Resource> storage_images;
     //SmallVector<Resource> atomic_counters;
     //SmallVector<Resource> acceleration_structures;
-    //SmallVector<Resource> push_constant_buffers;
-    //SmallVector<Resource> separate_images;
-    //SmallVector<Resource> separate_samplers;
 
 #undef SHADER_PARSE_GET_RESOURCE
 
@@ -69,5 +69,20 @@ public:
 
         *base_type  =type.basetype;
         *vecsize    =type.vecsize;
+    }
+
+    const uint32_t GetOffset(const spirv_cross::Resource& res)const
+    {
+        return compiler->get_decoration(res.id,spv::DecorationOffset);
+    }
+
+    const uint32_t GetBufferSize(const spirv_cross::Resource& res)const
+    {
+        return (uint32_t)(compiler->get_declared_struct_size(compiler->get_type(res.base_type_id)));
+    }
+
+    const uint32_t GetInputAttachmentIndex(const spirv_cross::Resource& res)const
+    {
+        return compiler->get_decoration(res.id,spv::DecorationInputAttachmentIndex);
     }
 };//class ShaderParse

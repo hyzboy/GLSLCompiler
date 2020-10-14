@@ -1,9 +1,12 @@
 ﻿#include<glslang/SPIRV/GlslangToSpv.h>
 #include<glslang/Include/ResourceLimits.h>
 #include"SPIRV-Cross/spirv_common.hpp"
+#include"StandAlone/DirStackFileIncluder.h"
 #include"VKShaderParse.h"
 #include<vector>
 #include<iostream>
+#include<fstream>
+#include<string>
 
 typedef enum VkShaderStageFlagBits {
     VK_SHADER_STAGE_VERTEX_BIT = 0x00000001,
@@ -51,7 +54,10 @@ typedef enum VkDescriptorType {
 
 constexpr uint32_t VK_DESCRIPTOR_TYPE_COUNT =VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
                                             -VK_DESCRIPTOR_TYPE_SAMPLER
-                                            +1;
+                                            +1+2; // One for push_constant, one for subpass_input.
+
+constexpr uint32_t ResID_PushConstant =VK_DESCRIPTOR_TYPE_COUNT-2;
+constexpr uint32_t ResID_SubpassInput =VK_DESCRIPTOR_TYPE_COUNT-1;
 
 static TBuiltInResource default_build_in_resource;
 
@@ -206,6 +212,18 @@ extern "C"
     {
         glslang::FinalizeProcess();
     }
+
+    enum class ShaderType
+    {
+        GLSL,
+        HLSL
+    };
+
+    struct CompileInfo
+    {
+        ShaderType shader_type = ShaderType::GLSL;
+        std::vector<std::string> include_dirs;
+    };
     
     enum class VertexAttribBaseType
     {
@@ -254,8 +272,26 @@ extern "C"
     {
         char name[128];
 
-        uint8_t set;
-        uint8_t binding;
+        union
+        {
+            struct
+            {
+                uint8_t set;
+                uint8_t binding;
+            };
+
+            struct
+            {
+                uint8_t offset;
+                uint8_t size;
+            };
+
+            struct
+            {
+                uint8_t input_attachment_index;
+            };
+        };
+        
     };
 
     struct ShaderResourceData
@@ -310,6 +346,11 @@ extern "C"
             Init();
         }
 
+        SPVData(const char* log)
+        {
+            SPVData(log, log);
+        }
+
         SPVData(const std::vector<uint32_t> &spirv)
         {
             result=true;
@@ -317,7 +358,7 @@ extern "C"
             log=nullptr;
             debug_log=nullptr;
 
-            spv_length=spirv.size();
+            spv_length=(uint32_t)spirv.size();
             spv_data=new uint32_t[spv_length];
             spv_length*=sizeof(uint32_t);
             memcpy(spv_data,spirv.data(),spv_length);
@@ -344,13 +385,12 @@ extern "C"
     {
         size_t attr_count=stages.size();
 
-        ssd->count=attr_count;
+        ssd->count=(uint32_t)attr_count;
 
         if(attr_count<=0)return;
 
         spirv_cross::SPIRType::BaseType base_type;
         uint8_t vec_size;
-        uint32_t location;
         std::string name;
 
         ssd->items=new ShaderStage[attr_count];
@@ -376,38 +416,95 @@ extern "C"
 
         if(count<=0)return;
 
-        ssd->count=count;
+        ssd->count=(uint32_t)count;
         ssd->items=new ShaderResource[count];
         ShaderResource *sr=ssd->items;
 
         for(const spirv_cross::Resource &obj:res)
         {
             strcpy(sr->name,sp->GetName(obj).c_str());
-            sr->binding=sp->GetBinding(obj);
-            sr->set=sp->GetSet(obj);
+            sr->set = sp->GetSet(obj);
+            sr->binding=sp->GetBinding(obj);       
 
             ++sr;
         }
     }
 
-    SPVData *GLSL2SPV(const uint32_t shader_type,const char *shader_source)
+    void OutputPushConstant(ShaderResourceData* ssd, ShaderParse* sp, const SPVResVector& res)
     {
-        EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_type);
+        size_t count = res.size();
 
-        glslang::TShader shader(stage);
-        glslang::TProgram program;
+        if (count <= 0)return;
+
+        ssd->count = (uint32_t)count;
+        ssd->items = new ShaderResource[count];
+        ShaderResource* sr = ssd->items;
+
+        for (const spirv_cross::Resource& obj : res)
+        {
+            strcpy(sr->name, sp->GetName(obj).c_str());
+            sr->offset = sp->GetOffset(obj);
+            sr->size = sp->GetBufferSize(obj);
+
+            ++sr;
+        }
+    }
+
+    void OutputSubpassInput(ShaderResourceData* ssd, ShaderParse* sp, const SPVResVector& res)
+    {
+        size_t count = res.size();
+
+        if (count <= 0)return;
+
+        ssd->count = (uint32_t)count;
+        ssd->items = new ShaderResource[count];
+        ShaderResource* sr = ssd->items;
+
+        for (const spirv_cross::Resource& obj : res)
+        {
+            strcpy(sr->name, sp->GetName(obj).c_str());
+            sr->input_attachment_index = sp->GetInputAttachmentIndex(obj);
+            sr->binding=sp->GetBinding(obj);
+
+            ++sr;
+        }
+    }
+
+    SPVData *Shader2SPV(
+        const uint32_t      shader_stage, 
+        const char *        shader_source, 
+        const CompileInfo * compile_info)
+    {
+        EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_stage);
+
+        glslang::TShader     shader(stage);
+        glslang::TProgram    program;
+        DirStackFileIncluder includer;
 
         const char *shaderStrings[1];
         TBuiltInResource Resources=default_build_in_resource;
 
-        // Enable SPIR-V and Vulkan rules when parsing GLSL
+        // Enable SPIR-V and Vulkan rules when parsing GLSL/HLSL
         EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
+        
+        if (compile_info != nullptr)
+        {
+            if (compile_info->shader_type == ShaderType::HLSL)
+            {
+                messages = (EShMessages)(EShMsgReadHlsl | EShMsgSpvRules | EShMsgVulkanRules);
+
+                // HLSL Request!
+                shader.setEntryPoint("main");
+            }
+
+            for (auto& dir:compile_info->include_dirs)
+                includer.pushExternalLocalDirectory(dir);
+        }
 
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
-        shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
 
-        if (!shader.parse(&Resources, 110, ECoreProfile, false, false, messages))
+        if (!shader.parse(&Resources, 100, false, messages, includer))
             return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
 
         program.addShader(&shader);
@@ -429,29 +526,65 @@ extern "C"
         SPVData *spv=new SPVData(spirv);
         
         {
-            ShaderParse sp(spirv.data(),spirv.size()*sizeof(uint32_t));
+            ShaderParse sp(spirv.data(),(uint32_t)spirv.size()*sizeof(uint32_t));
             
             OutputShaderStage(&(spv->input),&sp,sp.GetStageInputs());
             OutputShaderStage(&(spv->output),&sp,sp.GetStageOutputs());
-            
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampler());
+                    
             OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
             OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetImageSampler());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSampler());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetImage());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetImage2D());
+
+            OutputPushConstant  (spv->resource+ResID_PushConstant,                          &sp,sp.GetPushConstant());
+            OutputSubpassInput  (spv->resource+ResID_SubpassInput,                          &sp,sp.GetSubpassInputs());          
         }
 
         return(spv);
     }
+
+    SPVData *CompileFromPath(
+        const uint32_t      shader_stage,
+        const char *        shader_path,
+        const CompileInfo * compile_info)
+    {
+        std::ifstream is(shader_path, std::ios::binary | std::ios::ate); // std::ios::binary is REQUEST!
+        SPVData *data;
+
+        if (is.is_open())
+        {
+            size_t size = is.tellg();
+            if (size == -1)
+                return new SPVData("Error: std::istream::tellg return -1!");
+
+            is.seekg(0, std::ios::beg);
+            char* shaderCode = new char[size + 1];
+            is.read(shaderCode, size);
+            is.close();
+
+            shaderCode[size] = 0; // End of char* string.
+
+            data = Shader2SPV(shader_stage, shaderCode, compile_info);
+
+            delete[] shaderCode;
+
+            return data;
+        }
+        else return new SPVData(("Error: Could not open shader file \"" + std::string(shader_path) + "\"!").data());
+    }  
         
     uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
-        if (strnicmp(ext_name,"vert",4) == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
-        if (strnicmp(ext_name,"tesc",4) == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
-        if (strnicmp(ext_name,"tese",4) == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
-        if (strnicmp(ext_name,"geom",4) == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
-        if (strnicmp(ext_name,"frag",4) == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
-        if (strnicmp(ext_name,"comp",4) == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
-        if (strnicmp(ext_name,"task",4) == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
-        if (strnicmp(ext_name,"mesh",4) == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
+        if (_stricmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
+        if (_stricmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
+        if (_stricmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
+        if (_stricmp(ext_name,"geom") == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
+        if (_stricmp(ext_name,"frag") == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
+        if (_stricmp(ext_name,"comp") == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
+        if (_stricmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
+        if (_stricmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
         {
             return 0;
         }
@@ -463,7 +596,8 @@ extern "C"
         void        (*Close)();
 
         uint32_t    (*GetType)(const char *ext_name);
-        SPVData *   (*Compile)(const uint32_t type,const char *source);
+        SPVData *   (*Compile)(const uint32_t stage,const char *source, const CompileInfo *compile_info);
+        SPVData *   (*CompileFromPath)(const uint32_t stage,const char *path, const CompileInfo *compile_info);
 
         void        (*Free)(SPVData *);
     };
@@ -473,7 +607,8 @@ extern "C"
         &InitShaderCompiler,
         &CloseShaderCompiler,
         &GetShaderStageFlagByExtName,
-        &GLSL2SPV,
+        &Shader2SPV,
+        &CompileFromPath,
         &FreeSPVData
     };
     
