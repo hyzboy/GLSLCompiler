@@ -215,14 +215,17 @@ extern "C"
 
     enum class ShaderType
     {
-        GLSL,
-        HLSL
-    };
+        GLSL=0,
+        HLSL,
+
+        MAX=0xff
+    };//enum class ShaderType
 
     struct CompileInfo
     {
         ShaderType shader_type = ShaderType::GLSL;
-        std::vector<std::string> include_dirs;
+        uint32_t includes_count;
+        const char** includes;
     };
     
     enum class VertexAttribBaseType
@@ -346,9 +349,9 @@ extern "C"
             Init();
         }
 
-        SPVData(const char* log)
+        SPVData(const char* log) : SPVData(log, log)
         {
-            SPVData(log, log);
+            
         }
 
         SPVData(const std::vector<uint32_t> &spirv)
@@ -497,8 +500,10 @@ extern "C"
                 shader.setEntryPoint("main");
             }
 
-            for (auto& dir:compile_info->include_dirs)
-                includer.pushExternalLocalDirectory(dir);
+            for (uint32_t i = 0; i < compile_info->includes_count; i++)
+            {
+                includer.pushExternalLocalDirectory(compile_info->includes[i]);
+            }           
         }
 
         shaderStrings[0] = shader_source;
