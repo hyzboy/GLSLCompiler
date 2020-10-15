@@ -311,6 +311,7 @@ extern "C"
 
         uint32_t *spv_data;
         uint32_t spv_length;
+        uint32_t shader_stage;
 
         ShaderStageData input,output;
         ShaderResourceData resource[VK_DESCRIPTOR_TYPE_COUNT];
@@ -529,6 +530,8 @@ extern "C"
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
 
         SPVData *spv=new SPVData(spirv);
+
+        spv->shader_stage = shader_stage;
         
         {
             ShaderParse sp(spirv.data(),(uint32_t)spirv.size()*sizeof(uint32_t));
