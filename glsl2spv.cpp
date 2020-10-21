@@ -224,8 +224,9 @@ extern "C"
     struct CompileInfo
     {
         ShaderType shader_type = ShaderType::GLSL;
+        const char *entrypoint; 
         uint32_t includes_count;
-        const char** includes;
+        const char **includes;
     };
     
     enum class VertexAttribBaseType
@@ -498,7 +499,7 @@ extern "C"
                 messages = (EShMessages)(EShMsgReadHlsl | EShMsgSpvRules | EShMsgVulkanRules);
 
                 // HLSL Request!
-                shader.setEntryPoint("main");
+                shader.setEntryPoint(compile_info->entrypoint);
             }
 
             for (uint32_t i = 0; i < compile_info->includes_count; i++)
