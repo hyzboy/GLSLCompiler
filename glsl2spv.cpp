@@ -213,7 +213,7 @@ extern "C"
         glslang::FinalizeProcess();
     }
 
-    enum class ShaderType
+    enum class ShaderLanguageType
     {
         GLSL=0,
         HLSL,
@@ -223,7 +223,7 @@ extern "C"
 
     struct CompileInfo
     {
-        ShaderType shader_type = ShaderType::GLSL;
+        ShaderLanguageType shader_type = ShaderLanguageType::GLSL;
         const char *entrypoint; 
         uint32_t includes_count;
         const char **includes;
@@ -494,7 +494,7 @@ extern "C"
         
         if (compile_info != nullptr)
         {
-            if (compile_info->shader_type == ShaderType::HLSL)
+            if (compile_info->shader_type == ShaderLanguageType::HLSL)
             {
                 messages = (EShMessages)(EShMsgReadHlsl | EShMsgSpvRules | EShMsgVulkanRules);
 
