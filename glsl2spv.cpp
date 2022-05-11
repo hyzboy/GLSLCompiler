@@ -223,12 +223,12 @@ extern "C"
 
     struct CompileInfo
     {
-        ShaderLanguageType shader_type = ShaderLanguageType::GLSL;
-        const char *entrypoint; 
-        uint32_t includes_count;
-        const char **includes;
+        ShaderLanguageType  shader_type;
+        const char *        entrypoint;
+        uint32_t            includes_count;
+        const char **       includes;
     };
-    
+
     enum class VertexAttribBaseType
     {
         Bool=0,
@@ -605,8 +605,8 @@ extern "C"
         void        (*Close)();
 
         uint32_t    (*GetType)(const char *ext_name);
-        SPVData *   (*Compile)(const uint32_t stage,const char *source, const CompileInfo *compile_info);
-        SPVData *   (*CompileFromPath)(const uint32_t stage,const char *path, const CompileInfo *compile_info);
+        SPVData *   (*Compile)(const uint32_t stage,const char *shader_source, const CompileInfo *compile_info);
+        SPVData *   (*CompileFromPath)(const uint32_t stage,const char *shader_filename, const CompileInfo *compile_info);
 
         void        (*Free)(SPVData *);
     };
