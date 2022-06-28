@@ -227,6 +227,7 @@ extern "C"
         const char *        entrypoint;
         uint32_t            includes_count;
         const char **       includes;
+        const char *        preamble;
     };
 
     enum class VertexAttribBaseType
@@ -474,7 +475,7 @@ extern "C"
             ++sr;
         }
     }
-
+    
     SPVData *Shader2SPV(
         const uint32_t      shader_stage, 
         const char *        shader_source, 
@@ -507,6 +508,9 @@ extern "C"
                 includer.pushExternalLocalDirectory(compile_info->includes[i]);
             }           
         }
+
+        if(compile_info->preamble)
+        shader.setPreamble(compile_info->preamble);
 
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
