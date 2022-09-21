@@ -213,6 +213,24 @@ extern "C"
         glslang::FinalizeProcess();
     }
 
+    bool GetLimit(TBuiltInResource *bir,const int size)
+    {
+        if(!bir)return(false);
+        if(size!=sizeof(TBuiltInResource))return(false);
+
+        memcpy(bir,&default_build_in_resource,size);
+        return(true);
+    }
+
+    bool SetLimit(TBuiltInResource *bir,const int size)
+    {
+        if(!bir)return(false);
+        if(size!=sizeof(TBuiltInResource))return(false);
+
+        memcpy(&default_build_in_resource,bir,size);
+        return(true);
+    }
+
     enum class ShaderLanguageType
     {
         GLSL=0,
@@ -515,7 +533,11 @@ extern "C"
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
 
-        if (!shader.parse(&Resources, 100, false, messages, includer))
+        if (!shader.parse(&Resources, 
+                          100,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
+                          false, 
+                          messages, 
+                          includer))
             return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
 
         program.addShader(&shader);
@@ -608,6 +630,9 @@ extern "C"
         bool        (*Init)();
         void        (*Close)();
 
+        bool        (*GetLimit)(TBuiltInResource *,const int);
+        bool        (*SetLimit)(TBuiltInResource *,const int);
+
         uint32_t    (*GetType)(const char *ext_name);
         SPVData *   (*Compile)(const uint32_t stage,const char *shader_source, const CompileInfo *compile_info);
         SPVData *   (*CompileFromPath)(const uint32_t stage,const char *shader_filename, const CompileInfo *compile_info);
@@ -619,6 +644,8 @@ extern "C"
     {
         &InitShaderCompiler,
         &CloseShaderCompiler,
+        &GetLimit,
+        &SetLimit,
         &GetShaderStageFlagByExtName,
         &Shader2SPV,
         &CompileFromPath,
