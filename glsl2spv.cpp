@@ -170,32 +170,15 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
 {
     switch (shader_type) 
     {
-        case VK_SHADER_STAGE_VERTEX_BIT:
-            return EShLangVertex;
-
-        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
-            return EShLangTessControl;
-
-        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
-            return EShLangTessEvaluation;
-
-        case VK_SHADER_STAGE_GEOMETRY_BIT:
-            return EShLangGeometry;
-
-        case VK_SHADER_STAGE_FRAGMENT_BIT:
-            return EShLangFragment;
-
-        case VK_SHADER_STAGE_COMPUTE_BIT:
-            return EShLangCompute;
-
-        case VK_SHADER_STAGE_TASK_BIT_NV:
-            return EShLangTaskNV;
-
-        case VK_SHADER_STAGE_MESH_BIT_NV:
-            return EShLangMeshNV;
-
-        default:
-            return EShLangVertex;
+        case VK_SHADER_STAGE_VERTEX_BIT:                    return EShLangVertex;
+        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:      return EShLangTessControl;
+        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:   return EShLangTessEvaluation;
+        case VK_SHADER_STAGE_GEOMETRY_BIT:                  return EShLangGeometry;
+        case VK_SHADER_STAGE_FRAGMENT_BIT:                  return EShLangFragment;
+        case VK_SHADER_STAGE_COMPUTE_BIT:                   return EShLangCompute;
+        case VK_SHADER_STAGE_TASK_BIT_NV:                   return EShLangTaskNV;
+        case VK_SHADER_STAGE_MESH_BIT_NV:                   return EShLangMeshNV;
+        default:                                            return EShLangVertex;
     }
 }
 
