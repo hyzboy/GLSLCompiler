@@ -259,6 +259,17 @@ extern "C"
 
         return VertexAttribBaseType::MAX;
     }
+    
+    char *new_strcpy(const char *src)
+    {
+        int len=1+strlen(src);
+
+        char *str=new char[len];
+            
+        memcpy(str,src,len);
+
+        return str;
+    }
 
     struct ShaderStage
     {
@@ -296,8 +307,7 @@ extern "C"
             {
                 uint8_t input_attachment_index;
             };
-        };
-        
+        };        
     };
 
     struct ShaderResourceData
@@ -321,10 +331,7 @@ extern "C"
 
         void Init()
         {
-            memset(&input,0,sizeof(ShaderStageData));
-            memset(&output,0,sizeof(ShaderStageData));
-
-            memset(&resource,0,sizeof(resource));
+            memset(this,0,sizeof(SPVData));
         }
 
         void Clear()
@@ -342,11 +349,8 @@ extern "C"
         {
             result=false;
 
-            log=new char[strlen(l)+1];
-            strcpy(log,l);
-
-            debug_log=new char[strlen(dl)+1];
-            strcpy(debug_log,dl);
+            log=new_strcpy(l);
+            debug_log=new_strcpy(dl);
 
             spv_data=nullptr;
 
