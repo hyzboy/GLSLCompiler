@@ -21,6 +21,7 @@ ELSE()
 
         SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
         SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+        
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     endif()
 

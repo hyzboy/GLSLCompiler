@@ -29,12 +29,13 @@ public:
     SHADER_PARSE_GET_RESOURCE(SSBO,                      storage_buffers)
     SHADER_PARSE_GET_RESOURCE(StageInputs,               stage_inputs)
     SHADER_PARSE_GET_RESOURCE(StageOutputs,              stage_outputs)
-    SHADER_PARSE_GET_RESOURCE(ImageSampler,              sampled_images)
     SHADER_PARSE_GET_RESOURCE(SubpassInputs,             subpass_inputs)
-    SHADER_PARSE_GET_RESOURCE(Image2D,                   storage_images)
+    SHADER_PARSE_GET_RESOURCE(StorageImages,             storage_images)
+    SHADER_PARSE_GET_RESOURCE(SampledImages,             sampled_images)
+    SHADER_PARSE_GET_RESOURCE(AtomicCounters,            atomic_counters)
     SHADER_PARSE_GET_RESOURCE(PushConstant,              push_constant_buffers)
-    SHADER_PARSE_GET_RESOURCE(Image,                     separate_images)
-    SHADER_PARSE_GET_RESOURCE(Sampler,                   separate_samplers)
+    SHADER_PARSE_GET_RESOURCE(SeparateImages,            separate_images)
+    SHADER_PARSE_GET_RESOURCE(SeparateSamplers,          separate_samplers)
 
     //SmallVector<Resource> atomic_counters;
     //SmallVector<Resource> acceleration_structures;

@@ -46,18 +46,10 @@ typedef enum VkDescriptorType {
     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC = 8,
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC = 9,
     VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT = 10,
-    VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT = 1000138000,
-    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR = 1000165000,
-    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-    VK_DESCRIPTOR_TYPE_MAX_ENUM = 0x7FFFFFFF
 } VkDescriptorType;
 
 constexpr uint32_t VK_DESCRIPTOR_TYPE_COUNT =VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                            -VK_DESCRIPTOR_TYPE_SAMPLER
-                                            +1+2; // One for push_constant, one for subpass_input.
-
-constexpr uint32_t ResID_PushConstant =VK_DESCRIPTOR_TYPE_COUNT-2;
-constexpr uint32_t ResID_SubpassInput =VK_DESCRIPTOR_TYPE_COUNT-1;
+                                            -VK_DESCRIPTOR_TYPE_SAMPLER+1;
 
 static TBuiltInResource default_build_in_resource;
 
@@ -318,6 +310,8 @@ extern "C"
 
         ShaderStageData input,output;
         ShaderResourceData resource[VK_DESCRIPTOR_TYPE_COUNT];
+        ShaderResourceData push_constant;
+        ShaderResourceData subpass_input;
 
         void Init()
         {
@@ -325,12 +319,18 @@ extern "C"
             memset(&output,0,sizeof(ShaderStageData));
 
             memset(&resource,0,sizeof(resource));
+
+            memset(&push_constant,0,sizeof(ShaderResourceData));
+            memset(&subpass_input,0,sizeof(ShaderResourceData));
         }
 
         void Clear()
         {
             for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
                 delete[] resource[i].items;
+
+            delete[] push_constant.items;
+            delete[] subpass_input.items;
 
             delete[] input.items;
             delete[] output.items;
@@ -548,16 +548,16 @@ extern "C"
             
             OutputShaderStage(&(spv->input),&sp,sp.GetStageInputs());
             OutputShaderStage(&(spv->output),&sp,sp.GetStageOutputs());
-                    
+
             OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
             OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetImageSampler());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSampler());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetImage());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetImage2D());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampledImages());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSeparateSamplers());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetSeparateImages());
+            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetStorageImages());
 
-            OutputPushConstant  (spv->resource+ResID_PushConstant,                          &sp,sp.GetPushConstant());
-            OutputSubpassInput  (spv->resource+ResID_SubpassInput,                          &sp,sp.GetSubpassInputs());          
+            OutputPushConstant  (&(spv->push_constant),                                     &sp,sp.GetPushConstant());
+            OutputSubpassInput  (&(spv->subpass_input),                                     &sp,sp.GetSubpassInputs());
         }
 
         return(spv);
