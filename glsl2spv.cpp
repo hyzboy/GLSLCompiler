@@ -167,9 +167,19 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
         case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:   return EShLangTessEvaluation;
         case VK_SHADER_STAGE_GEOMETRY_BIT:                  return EShLangGeometry;
         case VK_SHADER_STAGE_FRAGMENT_BIT:                  return EShLangFragment;
+
         case VK_SHADER_STAGE_COMPUTE_BIT:                   return EShLangCompute;
+
         case VK_SHADER_STAGE_TASK_BIT_NV:                   return EShLangTaskNV;
         case VK_SHADER_STAGE_MESH_BIT_NV:                   return EShLangMeshNV;
+
+        case VK_SHADER_STAGE_RAYGEN_BIT_NV:                 return EShLangRayGenNV;
+        case VK_SHADER_STAGE_ANY_HIT_BIT_NV:                return EShLangAnyHitNV;
+        case VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV:            return EShLangClosestHitNV;
+        case VK_SHADER_STAGE_MISS_BIT_NV:                   return EShLangMissNV;
+        case VK_SHADER_STAGE_INTERSECTION_BIT_NV:           return EShLangIntersectNV;
+        case VK_SHADER_STAGE_CALLABLE_BIT_NV:               return EShLangCallableNV;
+
         default:                                            return EShLangVertex;
     }
 }
@@ -254,7 +264,7 @@ extern "C"
     
     char *new_strcpy(const char *src)
     {
-        int len=1+strlen(src);
+        size_t len=1+strlen(src);
 
         char *str=new char[len];
             
@@ -484,9 +494,11 @@ extern "C"
     {
         EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_stage);
 
-        glslang::TShader     shader(stage);
-        glslang::TProgram    program;
-        DirStackFileIncluder includer;
+        glslang::EShSource      source = glslang::EShSourceGlsl;
+
+        glslang::TShader        shader(stage);
+        glslang::TProgram       program;
+        DirStackFileIncluder    includer;
 
         const char *shaderStrings[1];
         TBuiltInResource Resources=default_build_in_resource;
@@ -502,6 +514,8 @@ extern "C"
 
                 // HLSL Request!
                 shader.setEntryPoint(compile_info->entrypoint);
+
+                source = glslang::EShSourceHlsl;
             }
 
             for (uint32_t i = 0; i < compile_info->includes_count; i++)
@@ -516,8 +530,12 @@ extern "C"
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
 
+//        shader.setEnvInput(source,stage,glslang::EShClientVulkan,);
+//        shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
+//        shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_0);
+
         if (!shader.parse(&Resources, 
-                          100,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
+                          110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
                           false, 
                           messages, 
                           includer))
@@ -600,9 +618,18 @@ extern "C"
         if (_stricmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
         if (_stricmp(ext_name,"geom") == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
         if (_stricmp(ext_name,"frag") == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
+
         if (_stricmp(ext_name,"comp") == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
+
         if (_stricmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
         if (_stricmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
+
+        if (_stricmp(ext_name,"rgen") == 0)return VK_SHADER_STAGE_RAYGEN_BIT_KHR; else
+        if (_stricmp(ext_name,"rahit") == 0)return VK_SHADER_STAGE_ANY_HIT_BIT_KHR; else
+        if (_stricmp(ext_name,"rchit") == 0)return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR; else
+        if (_stricmp(ext_name,"rmiss") == 0)return VK_SHADER_STAGE_MISS_BIT_KHR; else
+        if (_stricmp(ext_name,"rint") == 0)return VK_SHADER_STAGE_INTERSECTION_BIT_KHR; else
+        if (_stricmp(ext_name,"rcall") == 0)return VK_SHADER_STAGE_CALLABLE_BIT_KHR; else
         {
             return 0;
         }
