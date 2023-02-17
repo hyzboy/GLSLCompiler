@@ -326,7 +326,6 @@ extern "C"
 
         uint32_t *spv_data;
         uint32_t spv_length;
-        uint32_t shader_stage;
 
         ShaderStageData input,output;
         ShaderResourceData resource[VK_DESCRIPTOR_TYPE_COUNT];
@@ -336,18 +335,6 @@ extern "C"
         void Init()
         {
             memset(this,0,sizeof(SPVData));
-        }
-
-        void Clear()
-        {
-            for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
-                delete[] resource[i].items;
-
-            delete[] push_constant.items;
-            delete[] subpass_input.items;
-
-            delete[] input.items;
-            delete[] output.items;
         }
 
     public:
@@ -370,6 +357,8 @@ extern "C"
 
         SPVData(const std::vector<uint32_t> &spirv)
         {
+            Init();
+
             result=true;
 
             log=nullptr;
@@ -379,13 +368,18 @@ extern "C"
             spv_data=new uint32_t[spv_length];
             spv_length*=sizeof(uint32_t);
             memcpy(spv_data,spirv.data(),spv_length);
-
-            Init();
         }
 
         ~SPVData()
-        {
-            Clear();
+        {   
+            for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
+                delete[] resource[i].items;
+
+            delete[] push_constant.items;
+            delete[] subpass_input.items;
+
+            delete[] input.items;
+            delete[] output.items;
 
             delete[] log;
             delete[] debug_log;
@@ -488,8 +482,8 @@ extern "C"
     }
     
     SPVData *Shader2SPV(
-        const uint32_t      shader_stage, 
-        const char *        shader_source, 
+        const uint32_t      shader_stage,
+        const char *        shader_source,
         const CompileInfo * compile_info)
     {
         EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_stage);
@@ -521,7 +515,7 @@ extern "C"
             for (uint32_t i = 0; i < compile_info->includes_count; i++)
             {
                 includer.pushExternalLocalDirectory(compile_info->includes[i]);
-            }           
+            }
         }
 
         if(compile_info->preamble)
@@ -558,8 +552,6 @@ extern "C"
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
 
         SPVData *spv=new SPVData(spirv);
-
-        spv->shader_stage = shader_stage;
         
         {
             ShaderParse sp(spirv.data(),(uint32_t)spirv.size()*sizeof(uint32_t));
