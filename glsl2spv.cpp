@@ -285,6 +285,8 @@ struct ShaderResourceData
     T *items;
 };
 
+using ShaderDescriptorResource=ShaderResourceData<Descriptor>[VK_DESCRIPTOR_TYPE_COUNT];
+
 struct SPVData
 {
     bool result;
@@ -294,8 +296,9 @@ struct SPVData
     uint32_t *spv_data;
     uint32_t spv_length;
 
-    ShaderStageData input,output;
-    ShaderResourceData<Descriptor>      resource[VK_DESCRIPTOR_TYPE_COUNT];
+    ShaderStageData                     input,
+                                        output;
+    ShaderDescriptorResource            resource;
     ShaderResourceData<PushConstant>    push_constant;
     ShaderResourceData<SubpassInput>    subpass_input;
 
