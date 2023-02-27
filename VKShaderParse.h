@@ -49,7 +49,12 @@ public:
         return compiler->get_name(res.id);
     }
 
-    const uint32_t GetSet(const spirv_cross::Resource &res)const
+    const uint32_t GetIndex(const spirv_cross::Resource &res)const
+    {
+        return compiler->get_decoration(res.id,spv::DecorationIndex);
+    }
+
+    const uint32_t GetDescriptorSet(const spirv_cross::Resource &res)const
     {
         return compiler->get_decoration(res.id,spv::DecorationDescriptorSet);
     }
@@ -64,6 +69,16 @@ public:
         return compiler->get_decoration(res.id,spv::DecorationLocation);
     }
 
+    const uint32_t GetOffset(const spirv_cross::Resource& res)const
+    {
+        return compiler->get_decoration(res.id,spv::DecorationOffset);
+    }
+
+    const uint32_t GetInputAttachmentIndex(const spirv_cross::Resource& res)const
+    {
+        return compiler->get_decoration(res.id,spv::DecorationInputAttachmentIndex);
+    }
+
     void GetFormat(const spirv_cross::Resource &res,spirv_cross::SPIRType::BaseType *base_type,uint8_t *vecsize)
     {
         const spirv_cross::SPIRType &type=compiler->get_type(res.type_id);
@@ -72,18 +87,8 @@ public:
         *vecsize    =type.vecsize;
     }
 
-    const uint32_t GetOffset(const spirv_cross::Resource& res)const
-    {
-        return compiler->get_decoration(res.id,spv::DecorationOffset);
-    }
-
     const uint32_t GetBufferSize(const spirv_cross::Resource& res)const
     {
         return (uint32_t)(compiler->get_declared_struct_size(compiler->get_type(res.base_type_id)));
-    }
-
-    const uint32_t GetInputAttachmentIndex(const spirv_cross::Resource& res)const
-    {
-        return compiler->get_decoration(res.id,spv::DecorationInputAttachmentIndex);
     }
 };//class ShaderParse

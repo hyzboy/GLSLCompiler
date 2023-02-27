@@ -399,7 +399,7 @@ void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,co
     for(const spirv_cross::Resource &obj:res)
     {
         strcpy(sr->name,sp->GetName(obj).c_str());
-        sr->set = sp->GetSet(obj);
+        sr->set = sp->GetDescriptorSet(obj);
         sr->binding=sp->GetBinding(obj);       
 
         ++sr;
