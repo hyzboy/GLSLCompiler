@@ -45,3 +45,7 @@ set(VULKAN_SPIRV_LIBS   GenericCodeGen
 add_library(GLSLCompiler SHARED glsl2spv.cpp VKShaderParse.h)
 
 target_link_libraries(GLSLCompiler PRIVATE ${VULKAN_SPIRV_LIBS})
+
+add_library(GLSLCompilerStatic STATIC glsl2spv.cpp VKShaderParse.h)
+
+target_link_libraries(GLSLCompilerStatic PRIVATE ${VULKAN_SPIRV_LIBS})
