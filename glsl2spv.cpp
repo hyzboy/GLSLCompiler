@@ -241,14 +241,14 @@ char *new_strcpy(const char *src)
     return str;
 }
 
-constexpr size_t SHADER_RESOURCE_NAME_MAX_LENGTH=128;
+constexpr size_t SHADER_RESOURCE_NAME_MAX_LENGTH=32;
 
 struct ShaderStage
 {
     char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
     uint8_t location;
-    uint32_t basetype;
-    uint32_t vec_size;
+    uint8_t basetype;
+    uint8_t vec_size;
 };//
 
 struct ShaderStageData
