@@ -243,7 +243,7 @@ char *new_strcpy(const char *src)
 
 constexpr size_t SHADER_RESOURCE_NAME_MAX_LENGTH=32;
 
-struct ShaderStage
+struct ShaderAttribute
 {
     char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
     uint8_t location;
@@ -251,10 +251,10 @@ struct ShaderStage
     uint8_t vec_size;
 };//
 
-struct ShaderStageData
+struct ShaderAttributeData
 {
     uint32_t count;
-    ShaderStage *items;
+    ShaderAttribute *items;
 };
 
 struct Descriptor
@@ -296,7 +296,7 @@ struct SPVData
     uint32_t *spv_data;
     uint32_t spv_length;
 
-    ShaderStageData                     input,
+    ShaderAttributeData                 input,
                                         output;
     ShaderDescriptorResource            resource;
     ShaderResourceData<PushConstant>    push_constant;
@@ -357,7 +357,7 @@ public:
     }
 };//struct SPVData
 
-void OutputShaderStage(ShaderStageData *ssd,ShaderParse *sp,const SPVResVector &stages)
+void OutputShaderAttributes(ShaderAttributeData *ssd,ShaderParse *sp,const SPVResVector &stages)
 {
     size_t attr_count=stages.size();
 
@@ -369,8 +369,8 @@ void OutputShaderStage(ShaderStageData *ssd,ShaderParse *sp,const SPVResVector &
     uint8_t vec_size;
     std::string name;
 
-    ssd->items=new ShaderStage[attr_count];
-    ShaderStage *ss=ssd->items;
+    ssd->items=new ShaderAttribute[attr_count];
+    ShaderAttribute *ss=ssd->items;
 
     for(const spirv_cross::Resource &si:stages)
     {
@@ -558,8 +558,8 @@ extern "C"
         {
             ShaderParse sp(spirv.data(),(uint32_t)spirv.size()*sizeof(uint32_t));
             
-            OutputShaderStage(&(spv->input),&sp,sp.GetStageInputs());
-            OutputShaderStage(&(spv->output),&sp,sp.GetStageOutputs());
+            OutputShaderAttributes(&(spv->input),&sp,sp.GetStageInputs());
+            OutputShaderAttributes(&(spv->output),&sp,sp.GetStageOutputs());
 
             OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
             OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
