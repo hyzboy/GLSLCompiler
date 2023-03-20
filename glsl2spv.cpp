@@ -251,7 +251,7 @@ struct ShaderAttribute
     uint8_t vec_size;
 };//
 
-struct ShaderAttributeData
+struct ShaderAttributeArray
 {
     uint32_t count;
     ShaderAttribute *items;
@@ -342,10 +342,14 @@ public:
     }
 };//struct SPVData
 
+struct ShaderStageIO
+{
+    ShaderAttributeArray input,output;
+};//struct ShaderStageIO
+
 struct SPVParseData
 {
-    ShaderAttributeData                 input,
-                                        output;
+    ShaderStageIO                       stage_io;
     ShaderDescriptorResource            resource;
     ShaderResourceData<PushConstant>    push_constant;
     ShaderResourceData<SubpassInput>    subpass_input;
@@ -365,12 +369,12 @@ public:
         delete[] push_constant.items;
         delete[] subpass_input.items;
 
-        delete[] input.items;
-        delete[] output.items;
+        delete[] stage_io.input.items;
+        delete[] stage_io.output.items;
     }
 };
 
-void OutputShaderAttributes(ShaderAttributeData *ssd,ShaderParse *sp,const SPVResVector &stages)
+void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVResVector &stages)
 {
     size_t attr_count=stages.size();
 
@@ -575,8 +579,8 @@ extern "C"
 
         SPVParseData *spv=new SPVParseData;
 
-        OutputShaderAttributes(&(spv->input),&sp,sp.GetStageInputs());
-        OutputShaderAttributes(&(spv->output),&sp,sp.GetStageOutputs());
+        OutputShaderAttributes(&(spv->stage_io.input),&sp,sp.GetStageInputs());
+        OutputShaderAttributes(&(spv->stage_io.output),&sp,sp.GetStageOutputs());
 
         OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
         OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
