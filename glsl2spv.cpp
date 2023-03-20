@@ -296,12 +296,6 @@ struct SPVData
     uint32_t *spv_data;
     uint32_t spv_length;
 
-    ShaderAttributeData                 input,
-                                        output;
-    ShaderDescriptorResource            resource;
-    ShaderResourceData<PushConstant>    push_constant;
-    ShaderResourceData<SubpassInput>    subpass_input;
-
     void Init()
     {
         memset(this,0,sizeof(SPVData));
@@ -341,7 +335,30 @@ public:
     }
 
     ~SPVData()
-    {   
+    {
+        delete[] log;
+        delete[] debug_log;
+        delete[] spv_data;
+    }
+};//struct SPVData
+
+struct SPVParseData
+{
+    ShaderAttributeData                 input,
+                                        output;
+    ShaderDescriptorResource            resource;
+    ShaderResourceData<PushConstant>    push_constant;
+    ShaderResourceData<SubpassInput>    subpass_input;
+
+public:
+
+    SPVParseData()
+    {
+        memset(this,0,sizeof(SPVParseData));
+    }
+
+    ~SPVParseData()
+    {
         for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
             delete[] resource[i].items;
 
@@ -350,12 +367,8 @@ public:
 
         delete[] input.items;
         delete[] output.items;
-
-        delete[] log;
-        delete[] debug_log;
-        delete[] spv_data;
     }
-};//struct SPVData
+};
 
 void OutputShaderAttributes(ShaderAttributeData *ssd,ShaderParse *sp,const SPVResVector &stages)
 {
@@ -553,26 +566,34 @@ extern "C"
 
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
 
-        SPVData *spv=new SPVData(spirv);
-        
-        {
-            ShaderParse sp(spirv.data(),(uint32_t)spirv.size()*sizeof(uint32_t));
-            
-            OutputShaderAttributes(&(spv->input),&sp,sp.GetStageInputs());
-            OutputShaderAttributes(&(spv->output),&sp,sp.GetStageOutputs());
+        return(new SPVData(spirv));
+    }
 
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampledImages());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSeparateSamplers());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetSeparateImages());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetStorageImages());
+    SPVParseData *ParseSPV(SPVData *spv_data)
+    {
+        ShaderParse sp(spv_data->spv_data,spv_data->spv_length);
 
-            OutputPushConstant  (&(spv->push_constant),                                     &sp,sp.GetPushConstant());
-            OutputSubpassInput  (&(spv->subpass_input),                                     &sp,sp.GetSubpassInputs());
-        }
+        SPVParseData *spv=new SPVParseData;
 
-        return(spv);
+        OutputShaderAttributes(&(spv->input),&sp,sp.GetStageInputs());
+        OutputShaderAttributes(&(spv->output),&sp,sp.GetStageOutputs());
+
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampledImages());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSeparateSamplers());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetSeparateImages());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetStorageImages());
+
+        OutputPushConstant  (&(spv->push_constant),                                     &sp,sp.GetPushConstant());
+        OutputSubpassInput  (&(spv->subpass_input),                                     &sp,sp.GetSubpassInputs());
+
+        return spv;
+    }
+
+    void FreeSPVParse(SPVParseData *spv)
+    {
+        delete spv;
     }
 
     SPVData *CompileFromPath(
@@ -642,6 +663,9 @@ extern "C"
         SPVData *   (*CompileFromPath)(const uint32_t stage,const char *shader_filename, const CompileInfo *compile_info);
 
         void        (*Free)(SPVData *);
+
+        SPVParseData *(*ParseSPV)(SPVData *spv_data);
+        void        (*FreeParseSPVData)(SPVParseData *);
     };
 
     static GLSLCompilerInterface plug_in_interface
@@ -653,7 +677,10 @@ extern "C"
         &GetShaderStageFlagByExtName,
         &Shader2SPV,
         &CompileFromPath,
-        &FreeSPVData
+        &FreeSPVData,
+
+        &ParseSPV,
+        &FreeSPVParse
     };
     
 #ifdef WIN32
