@@ -199,6 +199,9 @@ struct CompileInfo
     uint32_t            includes_count;
     const char **       includes;
     const char *        preamble;
+
+    const uint32_t      vulkan_version;
+    const uint32_t      spv_version;
 };
 
 enum class VertexAttribBaseType
@@ -545,7 +548,9 @@ extern "C"
 
 //        shader.setEnvInput(source,stage,glslang::EShClientVulkan,);
 //        shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
-//        shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_0);
+
+        shader.setEnvInput(source,stage,glslang::EShClientVulkan,compile_info->vulkan_version);
+        shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)(compile_info->spv_version));
 
         if (!shader.parse(&Resources, 
                           110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
