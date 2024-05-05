@@ -46,18 +46,10 @@ typedef enum VkDescriptorType {
     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC = 8,
     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC = 9,
     VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT = 10,
-    VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT = 1000138000,
-    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR = 1000165000,
-    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-    VK_DESCRIPTOR_TYPE_MAX_ENUM = 0x7FFFFFFF
 } VkDescriptorType;
 
 constexpr uint32_t VK_DESCRIPTOR_TYPE_COUNT =VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                            -VK_DESCRIPTOR_TYPE_SAMPLER
-                                            +1+2; // One for push_constant, one for subpass_input.
-
-constexpr uint32_t ResID_PushConstant =VK_DESCRIPTOR_TYPE_COUNT-2;
-constexpr uint32_t ResID_SubpassInput =VK_DESCRIPTOR_TYPE_COUNT-1;
+                                            -VK_DESCRIPTOR_TYPE_SAMPLER+1;
 
 static TBuiltInResource default_build_in_resource;
 
@@ -170,32 +162,307 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
 {
     switch (shader_type) 
     {
-        case VK_SHADER_STAGE_VERTEX_BIT:
-            return EShLangVertex;
+        case VK_SHADER_STAGE_VERTEX_BIT:                    return EShLangVertex;
+        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:      return EShLangTessControl;
+        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:   return EShLangTessEvaluation;
+        case VK_SHADER_STAGE_GEOMETRY_BIT:                  return EShLangGeometry;
+        case VK_SHADER_STAGE_FRAGMENT_BIT:                  return EShLangFragment;
 
-        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
-            return EShLangTessControl;
+        case VK_SHADER_STAGE_COMPUTE_BIT:                   return EShLangCompute;
 
-        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
-            return EShLangTessEvaluation;
+        case VK_SHADER_STAGE_TASK_BIT_NV:                   return EShLangTaskNV;
+        case VK_SHADER_STAGE_MESH_BIT_NV:                   return EShLangMeshNV;
 
-        case VK_SHADER_STAGE_GEOMETRY_BIT:
-            return EShLangGeometry;
+        case VK_SHADER_STAGE_RAYGEN_BIT_NV:                 return EShLangRayGenNV;
+        case VK_SHADER_STAGE_ANY_HIT_BIT_NV:                return EShLangAnyHitNV;
+        case VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV:            return EShLangClosestHitNV;
+        case VK_SHADER_STAGE_MISS_BIT_NV:                   return EShLangMissNV;
+        case VK_SHADER_STAGE_INTERSECTION_BIT_NV:           return EShLangIntersectNV;
+        case VK_SHADER_STAGE_CALLABLE_BIT_NV:               return EShLangCallableNV;
 
-        case VK_SHADER_STAGE_FRAGMENT_BIT:
-            return EShLangFragment;
+        default:                                            return EShLangVertex;
+    }
+}
 
-        case VK_SHADER_STAGE_COMPUTE_BIT:
-            return EShLangCompute;
+enum class ShaderLanguageType
+{
+    GLSL=0,
+    HLSL,
 
-        case VK_SHADER_STAGE_TASK_BIT_NV:
-            return EShLangTaskNV;
+    MAX=0xff
+};//enum class ShaderType
 
-        case VK_SHADER_STAGE_MESH_BIT_NV:
-            return EShLangMeshNV;
+struct CompileInfo
+{
+    ShaderLanguageType  shader_type;
+    const char *        entrypoint;
+    uint32_t            includes_count;
+    const char **       includes;
+    const char *        preamble;
 
-        default:
-            return EShLangVertex;
+    const uint32_t      vulkan_version;
+    const uint32_t      spv_version;
+};
+
+enum class VertexAttribBaseType
+{
+    Bool=0,
+    Int,
+    UInt,
+    Float,
+    Double,
+
+    MAX=0xff
+};//enum class VertexAttribBaseType
+
+VertexAttribBaseType FromSPIRType(const spirv_cross::SPIRType::BaseType type)
+{
+    if(type==spirv_cross::SPIRType::BaseType::Boolean)  return VertexAttribBaseType::Bool;
+    if(type==spirv_cross::SPIRType::BaseType::SByte
+     ||type==spirv_cross::SPIRType::BaseType::Short
+     ||type==spirv_cross::SPIRType::BaseType::Int
+     ||type==spirv_cross::SPIRType::BaseType::Int64)    return VertexAttribBaseType::Int;
+    if(type==spirv_cross::SPIRType::BaseType::UByte
+     ||type==spirv_cross::SPIRType::BaseType::UShort
+     ||type==spirv_cross::SPIRType::BaseType::UInt
+     ||type==spirv_cross::SPIRType::BaseType::UInt64)   return VertexAttribBaseType::UInt;
+    if(type==spirv_cross::SPIRType::BaseType::Half
+     ||type==spirv_cross::SPIRType::BaseType::Float)    return VertexAttribBaseType::Float;
+    if(type==spirv_cross::SPIRType::BaseType::Double)   return VertexAttribBaseType::Double;
+
+    return VertexAttribBaseType::MAX;
+}
+    
+char *new_strcpy(const char *src)
+{
+    size_t len=1+strlen(src);
+
+    char *str=new char[len];
+            
+    memcpy(str,src,len);
+
+    return str;
+}
+
+constexpr size_t SHADER_RESOURCE_NAME_MAX_LENGTH=32;
+
+struct ShaderAttribute
+{
+    char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
+    uint8_t location;
+    uint8_t basetype;
+    uint8_t vec_size;
+};//
+
+struct ShaderAttributeArray
+{
+    uint32_t count;
+    ShaderAttribute *items;
+};
+
+struct Descriptor
+{
+    char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
+    uint8_t set;
+    uint8_t binding;
+};
+
+struct PushConstant
+{
+    char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
+    uint8_t offset;
+    uint8_t size;
+};
+
+struct SubpassInput
+{
+    char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
+    uint8_t input_attachment_index;
+    uint8_t binding;
+};
+
+template<typename T>
+struct ShaderResourceData
+{
+    uint32_t count;
+    T *items;
+};
+
+using ShaderDescriptorResource=ShaderResourceData<Descriptor>[VK_DESCRIPTOR_TYPE_COUNT];
+
+struct SPVData
+{
+    bool result;
+    char *log;
+    char *debug_log;
+
+    uint32_t *spv_data;
+    uint32_t spv_length;
+
+    void Init()
+    {
+        memset(this,0,sizeof(SPVData));
+    }
+
+public:
+
+    SPVData(const char *l,const char *dl)
+    {
+        Init();
+
+        result=false;
+
+        log=new_strcpy(l);
+        debug_log=new_strcpy(dl);
+
+        spv_data=nullptr;
+    }
+
+    SPVData(const char* log) : SPVData(log, log)
+    {
+    }
+
+    SPVData(const std::vector<uint32_t> &spirv)
+    {
+        Init();
+
+        result=true;
+
+        log=nullptr;
+        debug_log=nullptr;
+
+        spv_length=(uint32_t)spirv.size();
+        spv_data=new uint32_t[spv_length];
+        spv_length*=sizeof(uint32_t);
+        memcpy(spv_data,spirv.data(),spv_length);
+    }
+
+    ~SPVData()
+    {
+        delete[] log;
+        delete[] debug_log;
+        delete[] spv_data;
+    }
+};//struct SPVData
+
+struct ShaderStageIO
+{
+    ShaderAttributeArray input,output;
+};//struct ShaderStageIO
+
+struct SPVParseData
+{
+    ShaderStageIO                       stage_io;
+    ShaderDescriptorResource            resource;
+    ShaderResourceData<PushConstant>    push_constant;
+    ShaderResourceData<SubpassInput>    subpass_input;
+
+public:
+
+    SPVParseData()
+    {
+        memset(this,0,sizeof(SPVParseData));
+    }
+
+    ~SPVParseData()
+    {
+        for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
+            delete[] resource[i].items;
+
+        delete[] push_constant.items;
+        delete[] subpass_input.items;
+
+        delete[] stage_io.input.items;
+        delete[] stage_io.output.items;
+    }
+};
+
+void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVResVector &stages)
+{
+    size_t attr_count=stages.size();
+
+    ssd->count=(uint32_t)attr_count;
+
+    if(attr_count<=0)return;
+
+    spirv_cross::SPIRType::BaseType base_type;
+    uint8_t vec_size;
+    std::string name;
+
+    ssd->items=new ShaderAttribute[attr_count];
+    ShaderAttribute *ss=ssd->items;
+
+    for(const spirv_cross::Resource &si:stages)
+    {
+        sp->GetFormat(si,&base_type,&vec_size);
+
+        ss->basetype   =(uint8_t)FromSPIRType(base_type);
+        ss->vec_size    =vec_size;
+        ss->location    =sp->GetLocation(si);
+
+        strcpy(ss->name,sp->GetName(si).c_str());
+
+        ++ss;
+    }
+}
+
+void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,const SPVResVector &res)
+{
+    size_t count=res.size();
+
+    if(count<=0)return;
+
+    ssd->count=(uint32_t)count;
+    ssd->items=new Descriptor[count];
+    Descriptor *sr=ssd->items;
+
+    for(const spirv_cross::Resource &obj:res)
+    {
+        strcpy(sr->name,sp->GetName(obj).c_str());
+        sr->set = sp->GetDescriptorSet(obj);
+        sr->binding=sp->GetBinding(obj);       
+
+        ++sr;
+    }
+}
+
+void OutputPushConstant(ShaderResourceData<PushConstant> *ssd, ShaderParse* sp, const SPVResVector& res)
+{
+    size_t count = res.size();
+
+    if (count <= 0)return;
+
+    ssd->count = (uint32_t)count;
+    ssd->items = new PushConstant[count];
+    PushConstant *sr=ssd->items;
+
+    for (const spirv_cross::Resource& obj : res)
+    {
+        strcpy(sr->name, sp->GetName(obj).c_str());
+        sr->offset = sp->GetOffset(obj);
+        sr->size = sp->GetBufferSize(obj);
+
+        ++sr;
+    }
+}
+
+void OutputSubpassInput(ShaderResourceData<SubpassInput> *ssd, ShaderParse* sp, const SPVResVector& res)
+{
+    size_t count = res.size();
+
+    if (count <= 0)return;
+
+    ssd->count = (uint32_t)count;
+    ssd->items = new SubpassInput[count];
+    SubpassInput *sr = ssd->items;
+
+    for (const spirv_cross::Resource& obj : res)
+    {
+        strcpy(sr->name, sp->GetName(obj).c_str());
+        sr->input_attachment_index = sp->GetInputAttachmentIndex(obj);
+        sr->binding=sp->GetBinding(obj);
+
+        ++sr;
     }
 }
 
@@ -213,278 +480,41 @@ extern "C"
         glslang::FinalizeProcess();
     }
 
-    enum class ShaderLanguageType
+    bool GetLimit(TBuiltInResource *bir,const int size)
     {
-        GLSL=0,
-        HLSL,
+        if(!bir)return(false);
+        if(size!=sizeof(TBuiltInResource))return(false);
 
-        MAX=0xff
-    };//enum class ShaderType
-
-    struct CompileInfo
-    {
-        ShaderLanguageType shader_type = ShaderLanguageType::GLSL;
-        const char *entrypoint; 
-        uint32_t includes_count;
-        const char **includes;
-    };
-    
-    enum class VertexAttribBaseType
-    {
-        Bool=0,
-        Int,
-        UInt,
-        Float,
-        Double,
-
-        MAX=0xff
-    };//enum class VertexAttribBaseType
-
-    VertexAttribBaseType FromSPIRType(const spirv_cross::SPIRType::BaseType type)
-    {
-        if(type==spirv_cross::SPIRType::BaseType::Boolean)  return VertexAttribBaseType::Bool;
-        if(type==spirv_cross::SPIRType::BaseType::SByte
-         ||type==spirv_cross::SPIRType::BaseType::Short
-         ||type==spirv_cross::SPIRType::BaseType::Int
-         ||type==spirv_cross::SPIRType::BaseType::Int64)    return VertexAttribBaseType::Int;
-        if(type==spirv_cross::SPIRType::BaseType::UByte
-         ||type==spirv_cross::SPIRType::BaseType::UShort
-         ||type==spirv_cross::SPIRType::BaseType::UInt
-         ||type==spirv_cross::SPIRType::BaseType::UInt64)   return VertexAttribBaseType::UInt;
-        if(type==spirv_cross::SPIRType::BaseType::Half
-         ||type==spirv_cross::SPIRType::BaseType::Float)    return VertexAttribBaseType::Float;
-        if(type==spirv_cross::SPIRType::BaseType::Double)   return VertexAttribBaseType::Double;
-
-        return VertexAttribBaseType::MAX;
+        memcpy(bir,&default_build_in_resource,size);
+        return(true);
     }
 
-    struct ShaderStage
+    bool SetLimit(TBuiltInResource *bir,const int size)
     {
-        char name[128];
-        uint8_t location;
-        uint32_t basetype;
-        uint32_t vec_size;
-    };//
+        if(!bir)return(false);
+        if(size!=sizeof(TBuiltInResource))return(false);
 
-    struct ShaderStageData
-    {
-        uint32_t count;
-        ShaderStage *items;
-    };
-
-    struct ShaderResource
-    {
-        char name[128];
-
-        union
-        {
-            struct
-            {
-                uint8_t set;
-                uint8_t binding;
-            };
-
-            struct
-            {
-                uint8_t offset;
-                uint8_t size;
-            };
-
-            struct
-            {
-                uint8_t input_attachment_index;
-            };
-        };
-        
-    };
-
-    struct ShaderResourceData
-    {
-        uint32_t count;
-        ShaderResource *items;
-    };
-
-    struct SPVData
-    {
-        bool result;
-        char *log;
-        char *debug_log;
-
-        uint32_t *spv_data;
-        uint32_t spv_length;
-        uint32_t shader_stage;
-
-        ShaderStageData input,output;
-        ShaderResourceData resource[VK_DESCRIPTOR_TYPE_COUNT];
-
-        void Init()
-        {
-            memset(&input,0,sizeof(ShaderStageData));
-            memset(&output,0,sizeof(ShaderStageData));
-
-            memset(&resource,0,sizeof(resource));
-        }
-
-        void Clear()
-        {
-            for(uint32_t i=0;i<VK_DESCRIPTOR_TYPE_COUNT;i++)
-                delete[] resource[i].items;
-
-            delete[] input.items;
-            delete[] output.items;
-        }
-
-    public:
-
-        SPVData(const char *l,const char *dl)
-        {
-            result=false;
-
-            log=new char[strlen(l)+1];
-            strcpy(log,l);
-
-            debug_log=new char[strlen(dl)+1];
-            strcpy(debug_log,dl);
-
-            spv_data=nullptr;
-
-            Init();
-        }
-
-        SPVData(const char* log) : SPVData(log, log)
-        {
-            
-        }
-
-        SPVData(const std::vector<uint32_t> &spirv)
-        {
-            result=true;
-
-            log=nullptr;
-            debug_log=nullptr;
-
-            spv_length=(uint32_t)spirv.size();
-            spv_data=new uint32_t[spv_length];
-            spv_length*=sizeof(uint32_t);
-            memcpy(spv_data,spirv.data(),spv_length);
-
-            Init();
-        }
-
-        ~SPVData()
-        {
-            Clear();
-
-            delete[] log;
-            delete[] debug_log;
-            delete[] spv_data;
-        }
-    };//struct SPVData
+        memcpy(&default_build_in_resource,bir,size);
+        return(true);
+    }
 
     void FreeSPVData(SPVData *spv)
     {
         delete spv;
     }
-
-    void OutputShaderStage(ShaderStageData *ssd,ShaderParse *sp,const SPVResVector &stages)
-    {
-        size_t attr_count=stages.size();
-
-        ssd->count=(uint32_t)attr_count;
-
-        if(attr_count<=0)return;
-
-        spirv_cross::SPIRType::BaseType base_type;
-        uint8_t vec_size;
-        std::string name;
-
-        ssd->items=new ShaderStage[attr_count];
-        ShaderStage *ss=ssd->items;
-
-        for(const spirv_cross::Resource &si:stages)
-        {
-            sp->GetFormat(si,&base_type,&vec_size);
-
-            ss->basetype   =(uint8_t)FromSPIRType(base_type);
-            ss->vec_size    =vec_size;
-            ss->location    =sp->GetLocation(si);
-
-            strcpy(ss->name,sp->GetName(si).c_str());
-
-            ++ss;
-        }
-    }
-
-    void OutputShaderResource(ShaderResourceData *ssd,ShaderParse *sp,const SPVResVector &res)
-    {
-        size_t count=res.size();
-
-        if(count<=0)return;
-
-        ssd->count=(uint32_t)count;
-        ssd->items=new ShaderResource[count];
-        ShaderResource *sr=ssd->items;
-
-        for(const spirv_cross::Resource &obj:res)
-        {
-            strcpy(sr->name,sp->GetName(obj).c_str());
-            sr->set = sp->GetSet(obj);
-            sr->binding=sp->GetBinding(obj);       
-
-            ++sr;
-        }
-    }
-
-    void OutputPushConstant(ShaderResourceData* ssd, ShaderParse* sp, const SPVResVector& res)
-    {
-        size_t count = res.size();
-
-        if (count <= 0)return;
-
-        ssd->count = (uint32_t)count;
-        ssd->items = new ShaderResource[count];
-        ShaderResource* sr = ssd->items;
-
-        for (const spirv_cross::Resource& obj : res)
-        {
-            strcpy(sr->name, sp->GetName(obj).c_str());
-            sr->offset = sp->GetOffset(obj);
-            sr->size = sp->GetBufferSize(obj);
-
-            ++sr;
-        }
-    }
-
-    void OutputSubpassInput(ShaderResourceData* ssd, ShaderParse* sp, const SPVResVector& res)
-    {
-        size_t count = res.size();
-
-        if (count <= 0)return;
-
-        ssd->count = (uint32_t)count;
-        ssd->items = new ShaderResource[count];
-        ShaderResource* sr = ssd->items;
-
-        for (const spirv_cross::Resource& obj : res)
-        {
-            strcpy(sr->name, sp->GetName(obj).c_str());
-            sr->input_attachment_index = sp->GetInputAttachmentIndex(obj);
-            sr->binding=sp->GetBinding(obj);
-
-            ++sr;
-        }
-    }
-
+    
     SPVData *Shader2SPV(
-        const uint32_t      shader_stage, 
-        const char *        shader_source, 
+        const uint32_t      shader_stage,
+        const char *        shader_source,
         const CompileInfo * compile_info)
     {
         EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_stage);
 
-        glslang::TShader     shader(stage);
-        glslang::TProgram    program;
-        DirStackFileIncluder includer;
+        glslang::EShSource      source = glslang::EShSourceGlsl;
+
+        glslang::TShader        shader(stage);
+        glslang::TProgram       program;
+        DirStackFileIncluder    includer;
 
         const char *shaderStrings[1];
         TBuiltInResource Resources=default_build_in_resource;
@@ -500,18 +530,33 @@ extern "C"
 
                 // HLSL Request!
                 shader.setEntryPoint(compile_info->entrypoint);
+
+                source = glslang::EShSourceHlsl;
             }
 
             for (uint32_t i = 0; i < compile_info->includes_count; i++)
             {
                 includer.pushExternalLocalDirectory(compile_info->includes[i]);
-            }           
+            }
         }
+
+        if(compile_info->preamble)
+        shader.setPreamble(compile_info->preamble);
 
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
 
-        if (!shader.parse(&Resources, 100, false, messages, includer))
+//        shader.setEnvInput(source,stage,glslang::EShClientVulkan,);
+//        shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
+
+        shader.setEnvInput(source,stage,glslang::EShClientVulkan,compile_info->vulkan_version);
+        shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)(compile_info->spv_version));
+
+        if (!shader.parse(&Resources, 
+                          110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
+                          false, 
+                          messages, 
+                          includer))
             return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
 
         program.addShader(&shader);
@@ -530,28 +575,34 @@ extern "C"
 
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
 
-        SPVData *spv=new SPVData(spirv);
+        return(new SPVData(spirv));
+    }
 
-        spv->shader_stage = shader_stage;
-        
-        {
-            ShaderParse sp(spirv.data(),(uint32_t)spirv.size()*sizeof(uint32_t));
-            
-            OutputShaderStage(&(spv->input),&sp,sp.GetStageInputs());
-            OutputShaderStage(&(spv->output),&sp,sp.GetStageOutputs());
-                    
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetImageSampler());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSampler());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetImage());
-            OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetImage2D());
+    SPVParseData *ParseSPV(SPVData *spv_data)
+    {
+        ShaderParse sp(spv_data->spv_data,spv_data->spv_length);
 
-            OutputPushConstant  (spv->resource+ResID_PushConstant,                          &sp,sp.GetPushConstant());
-            OutputSubpassInput  (spv->resource+ResID_SubpassInput,                          &sp,sp.GetSubpassInputs());          
-        }
+        SPVParseData *spv=new SPVParseData;
 
-        return(spv);
+        OutputShaderAttributes(&(spv->stage_io.input),&sp,sp.GetStageInputs());
+        OutputShaderAttributes(&(spv->stage_io.output),&sp,sp.GetStageOutputs());
+
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampledImages());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSeparateSamplers());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetSeparateImages());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetStorageImages());
+
+        OutputPushConstant  (&(spv->push_constant),                                     &sp,sp.GetPushConstant());
+        OutputSubpassInput  (&(spv->subpass_input),                                     &sp,sp.GetSubpassInputs());
+
+        return spv;
+    }
+
+    void FreeSPVParse(SPVParseData *spv)
+    {
+        delete spv;
     }
 
     SPVData *CompileFromPath(
@@ -591,9 +642,18 @@ extern "C"
         if (_stricmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
         if (_stricmp(ext_name,"geom") == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
         if (_stricmp(ext_name,"frag") == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
+
         if (_stricmp(ext_name,"comp") == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
+
         if (_stricmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
         if (_stricmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
+
+        if (_stricmp(ext_name,"rgen") == 0)return VK_SHADER_STAGE_RAYGEN_BIT_KHR; else
+        if (_stricmp(ext_name,"rahit") == 0)return VK_SHADER_STAGE_ANY_HIT_BIT_KHR; else
+        if (_stricmp(ext_name,"rchit") == 0)return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR; else
+        if (_stricmp(ext_name,"rmiss") == 0)return VK_SHADER_STAGE_MISS_BIT_KHR; else
+        if (_stricmp(ext_name,"rint") == 0)return VK_SHADER_STAGE_INTERSECTION_BIT_KHR; else
+        if (_stricmp(ext_name,"rcall") == 0)return VK_SHADER_STAGE_CALLABLE_BIT_KHR; else
         {
             return 0;
         }
@@ -604,21 +664,32 @@ extern "C"
         bool        (*Init)();
         void        (*Close)();
 
+        bool        (*GetLimit)(TBuiltInResource *,const int);
+        bool        (*SetLimit)(TBuiltInResource *,const int);
+
         uint32_t    (*GetType)(const char *ext_name);
-        SPVData *   (*Compile)(const uint32_t stage,const char *source, const CompileInfo *compile_info);
-        SPVData *   (*CompileFromPath)(const uint32_t stage,const char *path, const CompileInfo *compile_info);
+        SPVData *   (*Compile)(const uint32_t stage,const char *shader_source, const CompileInfo *compile_info);
+        SPVData *   (*CompileFromPath)(const uint32_t stage,const char *shader_filename, const CompileInfo *compile_info);
 
         void        (*Free)(SPVData *);
+
+        SPVParseData *(*ParseSPV)(SPVData *spv_data);
+        void        (*FreeParseSPVData)(SPVParseData *);
     };
 
     static GLSLCompilerInterface plug_in_interface
     {
         &InitShaderCompiler,
         &CloseShaderCompiler,
+        &GetLimit,
+        &SetLimit,
         &GetShaderStageFlagByExtName,
         &Shader2SPV,
         &CompileFromPath,
-        &FreeSPVData
+        &FreeSPVData,
+
+        &ParseSPV,
+        &FreeSPVParse
     };
     
 #ifdef WIN32

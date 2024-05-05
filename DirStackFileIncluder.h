@@ -40,8 +40,14 @@
 #include <string>
 #include <fstream>
 #include <algorithm>
+<<<<<<< HEAD
 
 #include "glslang/Public/ShaderLang.h"
+=======
+#include <set>
+
+#include <glslang/Public/ShaderLang.h>
+>>>>>>> hyzgame/master
 
 // Default include class for normal include convention of search backward
 // through the stack of active include paths (for nested includes).
@@ -84,12 +90,24 @@ public:
         }
     }
 
+<<<<<<< HEAD
+=======
+    virtual std::set<std::string> getIncludedFiles()
+    {
+        return includedFiles;
+    }
+
+>>>>>>> hyzgame/master
     virtual ~DirStackFileIncluder() override { }
 
 protected:
     typedef char tUserDataElement;
     std::vector<std::string> directoryStack;
     int externalLocalDirectoryCount;
+<<<<<<< HEAD
+=======
+    std::set<std::string> includedFiles;
+>>>>>>> hyzgame/master
 
     // Search for a valid "local" path based on combining the stack of include
     // directories and the nominal name of the header.
@@ -108,6 +126,10 @@ protected:
             std::ifstream file(path, std::ios_base::binary | std::ios_base::ate);
             if (file) {
                 directoryStack.push_back(getDirectory(path));
+<<<<<<< HEAD
+=======
+                includedFiles.insert(path);
+>>>>>>> hyzgame/master
                 return newIncludeResult(path, file, (int)file.tellg());
             }
         }

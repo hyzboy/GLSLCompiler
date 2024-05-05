@@ -3,22 +3,13 @@ SET(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE)
 
 project(GLSLCompiler)
 
-if(MSVC)
-    SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
-    SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
-
-    SET(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
-    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-endif()
-
 include("compiler.cmake")
 include("system_bit.cmake")
 include("output_path.cmake")
 
-OPTION(USE_VULKAN_SDK "Use Vulkan SDK" OFF)
+option(USE_PRIVATE_SPIRV_CROSS  "Use private SPIRV-Cross" OFF)
 
-IF(USE_VULKAN_SDK)
+IF(USE_PRIVATE_SPIRV_CROSS)
 
     include("FindVulkan.cmake")
 
@@ -54,3 +45,7 @@ set(VULKAN_SPIRV_LIBS   GenericCodeGen
 add_library(GLSLCompiler SHARED glsl2spv.cpp VKShaderParse.h)
 
 target_link_libraries(GLSLCompiler PRIVATE ${VULKAN_SPIRV_LIBS})
+
+add_library(GLSLCompilerStatic STATIC glsl2spv.cpp VKShaderParse.h)
+
+target_link_libraries(GLSLCompilerStatic PRIVATE ${VULKAN_SPIRV_LIBS})
