@@ -1,7 +1,7 @@
 ﻿#include<glslang/SPIRV/GlslangToSpv.h>
 #include<glslang/Include/ResourceLimits.h>
 #include"SPIRV-Cross/spirv_common.hpp"
-#include"StandAlone/DirStackFileIncluder.h"
+#include"DirStackFileIncluder.h"
 #include"VKShaderParse.h"
 #include<vector>
 #include<iostream>
