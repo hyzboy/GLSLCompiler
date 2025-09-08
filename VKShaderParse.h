@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include"SPIRV-Cross/spirv_cross.hpp"
+#include"spirv_cross.hpp"
 #include<string>
 
 using SPVResVector=spirv_cross::SmallVector<spirv_cross::Resource>;

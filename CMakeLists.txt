@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 SET(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE)
 
 project(GLSLCompiler)
@@ -21,7 +21,7 @@ IF(USE_PRIVATE_SPIRV_CROSS)
     set(CMAKE_MODULE_PATH ${Vulkan_LIBRARIES}/cmake)
     set(CMAKE_MODULE_PATH ${Vulkan_LIBRARIES}/cmake/glslang)
 
-    target_link_directories(GLSLCompiler PRIVATE ${Vulkan_LIBRARIES_DIR})
+    link_directories(${Vulkan_LIBRARIES_DIR})
 
 ELSE()
 
