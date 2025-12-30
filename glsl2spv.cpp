@@ -521,6 +521,9 @@ extern "C"
         const char *        shader_source,
         const CompileInfo * compile_info)
     {
+        if (shader_source == nullptr)
+            return new SPVData("Error: shader_source is null!");
+
         EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_stage);
 
         glslang::EShSource      source = glslang::EShSourceGlsl;
@@ -547,9 +550,13 @@ extern "C"
                 source = glslang::EShSourceHlsl;
             }
 
-            for (uint32_t i = 0; i < compile_info->includes_count; i++)
+            if (compile_info->includes_count > 0 && compile_info->includes != nullptr)
             {
-                includer.pushExternalLocalDirectory(compile_info->includes[i]);
+                for (uint32_t i = 0; i < compile_info->includes_count; i++)
+                {
+                    if (compile_info->includes[i] != nullptr)
+                        includer.pushExternalLocalDirectory(compile_info->includes[i]);
+                }
             }
 
             if(compile_info->preamble)
@@ -623,15 +630,19 @@ extern "C"
         const char *        shader_path,
         const CompileInfo * compile_info)
     {
+        if (shader_path == nullptr)
+            return new SPVData("Error: shader_path is null!");
+
         std::ifstream is(shader_path, std::ios::binary | std::ios::ate); // std::ios::binary is REQUEST!
         SPVData *data;
 
         if (is.is_open())
         {
-            size_t size = is.tellg();
-            if (size == -1)
+            std::streampos pos = is.tellg();
+            if (pos == -1)
                 return new SPVData("Error: std::istream::tellg return -1!");
 
+            size_t size = static_cast<size_t>(pos);
             is.seekg(0, std::ios::beg);
             char* shaderCode = new char[size + 1];
             is.read(shaderCode, size);
@@ -645,11 +656,14 @@ extern "C"
 
             return data;
         }
-        else return new SPVData(("Error: Could not open shader file \"" + std::string(shader_path) + "\"!").data());
+        else return new SPVData(("Error: Could not open shader file \"" + std::string(shader_path) + "\"!").c_str());
     }  
         
     uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
+        if (ext_name == nullptr)
+            return 0;
+
         if (str_case_cmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
         if (str_case_cmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
         if (str_case_cmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
