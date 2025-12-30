@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include"spirv_cross.hpp"
 #include<string>
 

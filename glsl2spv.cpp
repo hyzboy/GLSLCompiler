@@ -1,4 +1,4 @@
-﻿#include<glslang/SPIRV/GlslangToSpv.h>
+#include<glslang/SPIRV/GlslangToSpv.h>
 #include<glslang/Include/ResourceLimits.h>
 //#include"SPIRV-Cross/spirv_common.hpp"
 #include"DirStackFileIncluder.h"
@@ -7,6 +7,15 @@
 #include<iostream>
 #include<fstream>
 #include<string>
+#include<cstring>
+
+// Platform-independent case-insensitive string comparison
+#ifdef _WIN32
+    #define str_case_cmp _stricmp
+#else
+    #include<strings.h>
+    #define str_case_cmp strcasecmp
+#endif
 
 typedef enum VkShaderStageFlagBits {
     VK_SHADER_STAGE_VERTEX_BIT = 0x00000001,
@@ -400,7 +409,8 @@ void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVR
         ss->vec_size    =vec_size;
         ss->location    =sp->GetLocation(si);
 
-        strcpy(ss->name,sp->GetName(si).c_str());
+        strncpy(ss->name,sp->GetName(si).c_str(),SHADER_RESOURCE_NAME_MAX_LENGTH-1);
+        ss->name[SHADER_RESOURCE_NAME_MAX_LENGTH-1]='\0';
 
         ++ss;
     }
@@ -418,7 +428,8 @@ void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,co
 
     for(const spirv_cross::Resource &obj:res)
     {
-        strcpy(sr->name,sp->GetName(obj).c_str());
+        strncpy(sr->name,sp->GetName(obj).c_str(),SHADER_RESOURCE_NAME_MAX_LENGTH-1);
+        sr->name[SHADER_RESOURCE_NAME_MAX_LENGTH-1]='\0';
         sr->set = sp->GetDescriptorSet(obj);
         sr->binding=sp->GetBinding(obj);       
 
@@ -438,7 +449,8 @@ void OutputPushConstant(ShaderResourceData<PushConstant> *ssd, ShaderParse* sp, 
 
     for (const spirv_cross::Resource& obj : res)
     {
-        strcpy(sr->name, sp->GetName(obj).c_str());
+        strncpy(sr->name, sp->GetName(obj).c_str(),SHADER_RESOURCE_NAME_MAX_LENGTH-1);
+        sr->name[SHADER_RESOURCE_NAME_MAX_LENGTH-1]='\0';
         sr->offset = sp->GetOffset(obj);
         sr->size = sp->GetBufferSize(obj);
 
@@ -458,7 +470,8 @@ void OutputSubpassInput(ShaderResourceData<SubpassInput> *ssd, ShaderParse* sp, 
 
     for (const spirv_cross::Resource& obj : res)
     {
-        strcpy(sr->name, sp->GetName(obj).c_str());
+        strncpy(sr->name, sp->GetName(obj).c_str(),SHADER_RESOURCE_NAME_MAX_LENGTH-1);
+        sr->name[SHADER_RESOURCE_NAME_MAX_LENGTH-1]='\0';
         sr->input_attachment_index = sp->GetInputAttachmentIndex(obj);
         sr->binding=sp->GetBinding(obj);
 
@@ -538,10 +551,10 @@ extern "C"
             {
                 includer.pushExternalLocalDirectory(compile_info->includes[i]);
             }
-        }
 
-        if(compile_info->preamble)
-        shader.setPreamble(compile_info->preamble);
+            if(compile_info->preamble)
+                shader.setPreamble(compile_info->preamble);
+        }
 
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
@@ -637,23 +650,23 @@ extern "C"
         
     uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
-        if (_stricmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
-        if (_stricmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
-        if (_stricmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
-        if (_stricmp(ext_name,"geom") == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
-        if (_stricmp(ext_name,"frag") == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
+        if (str_case_cmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
+        if (str_case_cmp(ext_name,"tesc") == 0)return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; else
+        if (str_case_cmp(ext_name,"tese") == 0)return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; else
+        if (str_case_cmp(ext_name,"geom") == 0)return VK_SHADER_STAGE_GEOMETRY_BIT; else
+        if (str_case_cmp(ext_name,"frag") == 0)return VK_SHADER_STAGE_FRAGMENT_BIT; else
 
-        if (_stricmp(ext_name,"comp") == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
+        if (str_case_cmp(ext_name,"comp") == 0)return VK_SHADER_STAGE_COMPUTE_BIT; else
 
-        if (_stricmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
-        if (_stricmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
+        if (str_case_cmp(ext_name,"task") == 0)return VK_SHADER_STAGE_TASK_BIT_NV; else
+        if (str_case_cmp(ext_name,"mesh") == 0)return VK_SHADER_STAGE_MESH_BIT_NV; else
 
-        if (_stricmp(ext_name,"rgen") == 0)return VK_SHADER_STAGE_RAYGEN_BIT_KHR; else
-        if (_stricmp(ext_name,"rahit") == 0)return VK_SHADER_STAGE_ANY_HIT_BIT_KHR; else
-        if (_stricmp(ext_name,"rchit") == 0)return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR; else
-        if (_stricmp(ext_name,"rmiss") == 0)return VK_SHADER_STAGE_MISS_BIT_KHR; else
-        if (_stricmp(ext_name,"rint") == 0)return VK_SHADER_STAGE_INTERSECTION_BIT_KHR; else
-        if (_stricmp(ext_name,"rcall") == 0)return VK_SHADER_STAGE_CALLABLE_BIT_KHR; else
+        if (str_case_cmp(ext_name,"rgen") == 0)return VK_SHADER_STAGE_RAYGEN_BIT_KHR; else
+        if (str_case_cmp(ext_name,"rahit") == 0)return VK_SHADER_STAGE_ANY_HIT_BIT_KHR; else
+        if (str_case_cmp(ext_name,"rchit") == 0)return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR; else
+        if (str_case_cmp(ext_name,"rmiss") == 0)return VK_SHADER_STAGE_MISS_BIT_KHR; else
+        if (str_case_cmp(ext_name,"rint") == 0)return VK_SHADER_STAGE_INTERSECTION_BIT_KHR; else
+        if (str_case_cmp(ext_name,"rcall") == 0)return VK_SHADER_STAGE_CALLABLE_BIT_KHR; else
         {
             return 0;
         }
