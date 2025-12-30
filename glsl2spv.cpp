@@ -43,6 +43,10 @@ typedef enum VkShaderStageFlagBits {
     VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
 } VkShaderStageFlagBits;
 
+// Default values for Vulkan and SPIR-V versions when compile_info is not provided
+constexpr uint32_t VULKAN_DEFAULT_VERSION = 100;      // Vulkan 1.0
+constexpr uint32_t SPIRV_DEFAULT_VERSION = 0x00010000; // SPIR-V 1.0
+
 typedef enum VkDescriptorType {
     VK_DESCRIPTOR_TYPE_SAMPLER = 0,
     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 1,
@@ -577,8 +581,8 @@ extern "C"
         else
         {
             // Use default Vulkan 1.0 and SPIR-V 1.0 if no compile info provided
-            shader.setEnvInput(source,stage,glslang::EShClientVulkan,100);
-            shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)0x00010000);
+            shader.setEnvInput(source,stage,glslang::EShClientVulkan,VULKAN_DEFAULT_VERSION);
+            shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)SPIRV_DEFAULT_VERSION);
         }
 
         if (!shader.parse(&Resources, 
