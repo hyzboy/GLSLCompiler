@@ -13,7 +13,7 @@
 #define _stricmp strcasecmp
 #endif
 
-#include"SPVParseFlat.h"
+#include"GLSLCompiler.h"
 
 typedef enum VkShaderStageFlagBits {
     VK_SHADER_STAGE_VERTEX_BIT = 0x00000001,
@@ -190,26 +190,6 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
         default:                                            return EShLangVertex;
     }
 }
-
-enum class ShaderLanguageType
-{
-    GLSL=0,
-    HLSL,
-
-    MAX=0xff
-};//enum class ShaderType
-
-struct CompileInfo
-{
-    ShaderLanguageType  shader_type;
-    const char *        entrypoint;
-    uint32_t            includes_count;
-    const char **       includes;
-    const char *        preamble;
-
-    const uint32_t      vulkan_version;
-    const uint32_t      spv_version;
-};
 
 enum class VertexAttribBaseType
 {
@@ -528,6 +508,21 @@ extern "C"
     {
         delete spv;
     }
+
+    bool SPVDataGetResult(const SPVData *d)
+    {
+        return d ? d->result : false;
+    }
+
+    const char *SPVDataGetLog(const SPVData *d)
+    {
+        return d ? d->log : nullptr;
+    }
+
+    const char *SPVDataGetDebugLog(const SPVData *d)
+    {
+        return d ? d->debug_log : nullptr;
+    }
     
     SPVData *Shader2SPV(
         const uint32_t      shader_stage,
@@ -794,6 +789,11 @@ extern "C"
                                         const SPVData *, const SPVParseData *,
                                         uint32_t *out_size);
         void        (*FreeShaderFlat)(uint8_t *flat_data);
+
+        // SPVData field accessors (for dynamic-load callers)
+        bool        (*SPVDataGetResult)  (const SPVData *);
+        const char *(*SPVDataGetLog)     (const SPVData *);
+        const char *(*SPVDataGetDebugLog)(const SPVData *);
     };
 
     static GLSLCompilerInterface plug_in_interface
@@ -811,7 +811,11 @@ extern "C"
         &FreeSPVParse,
 
         &CreateShaderFlat,
-        &FreeShaderFlat
+        &FreeShaderFlat,
+
+        &SPVDataGetResult,
+        &SPVDataGetLog,
+        &SPVDataGetDebugLog
     };
     
 #ifdef WIN32

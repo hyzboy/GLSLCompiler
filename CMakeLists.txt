@@ -155,10 +155,14 @@ ELSE()
 
 ENDIF()
 
-add_library(GLSLCompiler SHARED glsl2spv.cpp VKShaderParse.h)
+add_library(GLSLCompiler SHARED glsl2spv.cpp VKShaderParse.h GLSLCompiler.h)
 
 target_link_libraries(GLSLCompiler PRIVATE ${VULKAN_SPIRV_LIBS})
 
-add_library(GLSLCompilerStatic STATIC glsl2spv.cpp VKShaderParse.h)
+add_library(GLSLCompilerStatic STATIC glsl2spv.cpp VKShaderParse.h GLSLCompiler.h)
 
 target_link_libraries(GLSLCompilerStatic PRIVATE ${VULKAN_SPIRV_LIBS})
+
+# spvfc — command-line shader compiler (GLSL/HLSL → .spvf)
+add_executable(spvfc spvfc.cpp)
+target_link_libraries(spvfc PRIVATE GLSLCompilerStatic ${VULKAN_SPIRV_LIBS})
