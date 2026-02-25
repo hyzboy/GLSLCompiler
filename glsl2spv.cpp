@@ -8,6 +8,11 @@
 #include<fstream>
 #include<string>
 
+#ifndef _WIN32
+#include<strings.h>
+#define _stricmp strcasecmp
+#endif
+
 typedef enum VkShaderStageFlagBits {
     VK_SHADER_STAGE_VERTEX_BIT = 0x00000001,
     VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT = 0x00000002,
