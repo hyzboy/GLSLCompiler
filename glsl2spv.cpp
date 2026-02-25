@@ -259,6 +259,7 @@ struct ShaderAttribute
     uint8_t location;
     uint8_t basetype;
     uint8_t vec_size;
+    uint8_t col_count;
 };//
 
 struct ShaderAttributeArray
@@ -272,13 +273,15 @@ struct Descriptor
     char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
     uint8_t set;
     uint8_t binding;
+    uint8_t descriptor_type;
+    uint8_t array_size;
 };
 
 struct PushConstant
 {
     char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
-    uint8_t offset;
-    uint8_t size;
+    uint32_t offset;
+    uint32_t size;
 };
 
 struct SubpassInput
@@ -298,14 +301,16 @@ struct ShaderResourceData
 using ShaderDescriptorResource=ShaderResourceData<Descriptor>[VK_DESCRIPTOR_TYPE_COUNT];
 
 // Verify flat-binary POD types have the same byte layout as the originals.
-static_assert(sizeof(ShaderAttribute) == sizeof(SPVPFAttribute),
-              "layout mismatch: ShaderAttribute vs SPVPFAttribute");
-static_assert(sizeof(Descriptor)      == sizeof(SPVPFDescriptor),
-              "layout mismatch: Descriptor vs SPVPFDescriptor");
-static_assert(sizeof(PushConstant)    == sizeof(SPVPFPushConstant),
-              "layout mismatch: PushConstant vs SPVPFPushConstant");
-static_assert(sizeof(SubpassInput)    == sizeof(SPVPFSubpassInput),
-              "layout mismatch: SubpassInput vs SPVPFSubpassInput");
+static_assert(sizeof(ShaderAttribute) == sizeof(SFAttribute),
+              "layout mismatch: ShaderAttribute vs SFAttribute");
+static_assert(sizeof(Descriptor)      == sizeof(SFDescriptor),
+              "layout mismatch: Descriptor vs SFDescriptor");
+static_assert(sizeof(PushConstant)    == sizeof(SFPushConstant),
+              "layout mismatch: PushConstant vs SFPushConstant");
+static_assert(sizeof(SubpassInput)    == sizeof(SFSubpassInput),
+              "layout mismatch: SubpassInput vs SFSubpassInput");
+static_assert(sizeof(ShaderFlatHeader) == 84,
+              "ShaderFlatHeader size changed unexpectedly");
 
 struct SPVData
 {
@@ -404,6 +409,7 @@ void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVR
 
     spirv_cross::SPIRType::BaseType base_type;
     uint8_t vec_size;
+    uint8_t col_count;
     std::string name;
 
     ssd->items=new ShaderAttribute[attr_count];
@@ -411,10 +417,11 @@ void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVR
 
     for(const spirv_cross::Resource &si:stages)
     {
-        sp->GetFormat(si,&base_type,&vec_size);
+        sp->GetFormat(si,&base_type,&vec_size,&col_count);
 
         ss->basetype   =(uint8_t)FromSPIRType(base_type);
         ss->vec_size    =vec_size;
+        ss->col_count   =col_count;
         ss->location    =sp->GetLocation(si);
 
         strcpy(ss->name,sp->GetName(si).c_str());
@@ -423,7 +430,7 @@ void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVR
     }
 }
 
-void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,const SPVResVector &res)
+void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,const SPVResVector &res,uint8_t descriptor_type)
 {
     size_t count=res.size();
 
@@ -436,8 +443,10 @@ void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,co
     for(const spirv_cross::Resource &obj:res)
     {
         strcpy(sr->name,sp->GetName(obj).c_str());
-        sr->set = sp->GetDescriptorSet(obj);
-        sr->binding=sp->GetBinding(obj);       
+        sr->set             = sp->GetDescriptorSet(obj);
+        sr->binding         = sp->GetBinding(obj);
+        sr->descriptor_type = descriptor_type;
+        sr->array_size      = (uint8_t)sp->GetArraySize(obj);
 
         ++sr;
     }
@@ -604,12 +613,12 @@ extern "C"
         OutputShaderAttributes(&(spv->stage_io.input),&sp,sp.GetStageInputs());
         OutputShaderAttributes(&(spv->stage_io.output),&sp,sp.GetStageOutputs());
 
-        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO());
-        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO());
-        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampledImages());
-        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSeparateSamplers());
-        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetSeparateImages());
-        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetStorageImages());
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,           &sp,sp.GetUBO(),           VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,           &sp,sp.GetSSBO(),          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,   &sp,sp.GetSampledImages(), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLER,                  &sp,sp.GetSeparateSamplers(),VK_DESCRIPTOR_TYPE_SAMPLER);
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,            &sp,sp.GetSeparateImages(),VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        OutputShaderResource(spv->resource+VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,            &sp,sp.GetStorageImages(), VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
         OutputPushConstant  (&(spv->push_constant),                                     &sp,sp.GetPushConstant());
         OutputSubpassInput  (&(spv->subpass_input),                                     &sp,sp.GetSubpassInputs());
@@ -623,38 +632,62 @@ extern "C"
     }
 
     // -----------------------------------------------------------------------
-    // FlattenSPVParseData
+    // CreateShaderFlat
     //
-    // Serializes a SPVParseData into a single contiguous flat binary buffer.
-    // The returned buffer can be written to disk and later reloaded with
-    // SPVParseFlatLoad() from SPVParseFlat.h — no SPIRV-Cross required.
-    // The caller owns the buffer and must release it with FreeSPVParseFlat().
-    // Returns nullptr on allocation failure.
+    // Combines the raw SPIRV binary (from SPVData) with SPIRV-Cross reflection
+    // data (from SPVParseData) into a single flat binary file.
+    //
+    // shader_stage  : VkShaderStageFlagBits for this shader
+    // entrypoint    : entry point name (e.g. "main", or the HLSL entry name)
+    // spv           : compiled SPIRV from Shader2SPV()
+    // parsed        : reflection data from ParseSPV()
+    // out_size      : receives total buffer size in bytes
+    //
+    // Returns a caller-owned buffer; release with FreeShaderFlat().
+    // At runtime (loader side) call ShaderFlatLoad() from SPVParseFlat.h —
+    // that requires only <stdint.h> + <string.h>.
     // -----------------------------------------------------------------------
-    uint8_t *FlattenSPVParseData(const SPVParseData *spv, uint32_t *out_size)
+    uint8_t *CreateShaderFlat(
+        const uint32_t       shader_stage,
+        const char          *entrypoint,
+        const SPVData        *spv,
+        const SPVParseData   *parsed,
+        uint32_t             *out_size)
     {
-        if (!spv || !out_size) return nullptr;
+        if (!spv || !spv->result || !parsed || !out_size) return nullptr;
 
-        // ---- calculate required buffer size ----
-        uint32_t sz = sizeof(SPVParseFlatHeader);
-        sz += sizeof(uint32_t) + spv->stage_io.input.count  * (uint32_t)sizeof(SPVPFAttribute);
-        sz += sizeof(uint32_t) + spv->stage_io.output.count * (uint32_t)sizeof(SPVPFAttribute);
+        const uint32_t spv_bytes = spv->spv_length; /* already in bytes */
+
+        // ---- calculate total size ----
+        uint32_t sz = (uint32_t)sizeof(ShaderFlatHeader);
+        sz += spv_bytes;
+        sz += sizeof(uint32_t) + parsed->stage_io.input.count  * (uint32_t)sizeof(SFAttribute);
+        sz += sizeof(uint32_t) + parsed->stage_io.output.count * (uint32_t)sizeof(SFAttribute);
         for (uint32_t i = 0; i < VK_DESCRIPTOR_TYPE_COUNT; i++)
-            sz += sizeof(uint32_t) + spv->resource[i].count * (uint32_t)sizeof(SPVPFDescriptor);
-        sz += sizeof(uint32_t) + spv->push_constant.count * (uint32_t)sizeof(SPVPFPushConstant);
-        sz += sizeof(uint32_t) + spv->subpass_input.count * (uint32_t)sizeof(SPVPFSubpassInput);
+            sz += sizeof(uint32_t) + parsed->resource[i].count * (uint32_t)sizeof(SFDescriptor);
+        sz += sizeof(uint32_t) + parsed->push_constant.count * (uint32_t)sizeof(SFPushConstant);
+        sz += sizeof(uint32_t) + parsed->subpass_input.count * (uint32_t)sizeof(SFSubpassInput);
 
         uint8_t *buf = new uint8_t[sz];
         uint8_t *p   = buf;
 
-        // ---- write header ----
-        SPVParseFlatHeader *hdr = reinterpret_cast<SPVParseFlatHeader *>(p);
-        hdr->magic      = SPVPF_MAGIC;
-        hdr->version    = SPVPF_VERSION;
-        hdr->total_size = sz;
-        p += sizeof(SPVParseFlatHeader);
+        // ---- header ----
+        ShaderFlatHeader *hdr = reinterpret_cast<ShaderFlatHeader *>(p);
+        memset(hdr, 0, sizeof(ShaderFlatHeader));
+        hdr->magic        = SF_MAGIC;
+        hdr->version      = SF_VERSION;
+        hdr->total_size   = sz;
+        hdr->shader_stage = shader_stage;
+        hdr->spv_size     = spv_bytes;
+        if (entrypoint)
+            strncpy(hdr->entrypoint, entrypoint, SF_ENTRYPOINT_MAX_LENGTH - 1);
+        p += sizeof(ShaderFlatHeader);
 
-        // ---- helper: write count then items ----
+        // ---- SPIRV binary ----
+        memcpy(p, spv->spv_data, spv_bytes);
+        p += spv_bytes;
+
+        // ---- helper: write count then item array ----
         auto write_section = [&](uint32_t count, const void *items, uint32_t item_size)
         {
             *reinterpret_cast<uint32_t *>(p) = count;
@@ -664,23 +697,23 @@ extern "C"
             p += count * item_size;
         };
 
-        write_section(spv->stage_io.input.count,  spv->stage_io.input.items,
+        write_section(parsed->stage_io.input.count,  parsed->stage_io.input.items,
                       (uint32_t)sizeof(ShaderAttribute));
-        write_section(spv->stage_io.output.count, spv->stage_io.output.items,
+        write_section(parsed->stage_io.output.count, parsed->stage_io.output.items,
                       (uint32_t)sizeof(ShaderAttribute));
         for (uint32_t i = 0; i < VK_DESCRIPTOR_TYPE_COUNT; i++)
-            write_section(spv->resource[i].count, spv->resource[i].items,
+            write_section(parsed->resource[i].count, parsed->resource[i].items,
                           (uint32_t)sizeof(Descriptor));
-        write_section(spv->push_constant.count, spv->push_constant.items,
+        write_section(parsed->push_constant.count, parsed->push_constant.items,
                       (uint32_t)sizeof(PushConstant));
-        write_section(spv->subpass_input.count, spv->subpass_input.items,
+        write_section(parsed->subpass_input.count, parsed->subpass_input.items,
                       (uint32_t)sizeof(SubpassInput));
 
         *out_size = sz;
         return buf;
     }
 
-    void FreeSPVParseFlat(uint8_t *flat_data)
+    void FreeShaderFlat(uint8_t *flat_data)
     {
         delete[] flat_data;
     }
@@ -756,9 +789,11 @@ extern "C"
         SPVParseData *(*ParseSPV)(SPVData *spv_data);
         void        (*FreeParseSPVData)(SPVParseData *);
 
-        // Flat binary serialization: persist SPVParseData without SPIRV-Cross
-        uint8_t *   (*FlattenSPVParseData)(const SPVParseData *, uint32_t *out_size);
-        void        (*FreeSPVParseFlat)(uint8_t *flat_data);
+        // Unified shader flat file: SPIRV binary + reflection, zero-dep loader
+        uint8_t *   (*CreateShaderFlat)(uint32_t stage, const char *entrypoint,
+                                        const SPVData *, const SPVParseData *,
+                                        uint32_t *out_size);
+        void        (*FreeShaderFlat)(uint8_t *flat_data);
     };
 
     static GLSLCompilerInterface plug_in_interface
@@ -775,8 +810,8 @@ extern "C"
         &ParseSPV,
         &FreeSPVParse,
 
-        &FlattenSPVParseData,
-        &FreeSPVParseFlat
+        &CreateShaderFlat,
+        &FreeShaderFlat
     };
     
 #ifdef WIN32
