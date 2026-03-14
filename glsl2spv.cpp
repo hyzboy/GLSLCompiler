@@ -508,6 +508,8 @@ extern "C"
         const char *        shader_source,
         const CompileInfo * compile_info)
     {
+      try
+      {
         EShLanguage stage = FindLanguage((VkShaderStageFlagBits)shader_stage);
 
         glslang::EShSource      source = glslang::EShSourceGlsl;
@@ -540,8 +542,11 @@ extern "C"
             }
         }
 
-        if(compile_info->preamble)
-        shader.setPreamble(compile_info->preamble);
+        // 始终启用 GL_GOOGLE_include_directive 以支持 #include 指令
+        std::string combined_preamble = "#extension GL_GOOGLE_include_directive : require\n";
+        if(compile_info && compile_info->preamble && compile_info->preamble[0] != '\0')
+            combined_preamble += compile_info->preamble;
+        shader.setPreamble(combined_preamble.c_str());
 
         shaderStrings[0] = shader_source;
         shader.setStrings(shaderStrings, 1);
@@ -576,6 +581,17 @@ extern "C"
         glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
 
         return(new SPVData(spirv));
+      }
+      catch(const std::exception &e)
+      {
+        std::string msg = "Exception in Shader2SPV: ";
+        msg += e.what();
+        return(new SPVData(msg.c_str()));
+      }
+      catch(...)
+      {
+        return(new SPVData("Unknown exception in Shader2SPV"));
+      }
     }
 
     SPVParseData *ParseSPV(SPVData *spv_data)
