@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
 // Copyright (C) 2017 Google, Inc.
 //

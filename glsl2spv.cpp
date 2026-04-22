@@ -53,7 +53,7 @@ constexpr uint32_t VK_DESCRIPTOR_TYPE_COUNT =VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
 
 static TBuiltInResource default_build_in_resource;
 
-void init_default_build_in_resource() 
+void init_default_build_in_resource()
 {
     default_build_in_resource.maxLights = 32;
     default_build_in_resource.maxClipPlanes = 6;
@@ -158,9 +158,9 @@ void init_default_build_in_resource()
     default_build_in_resource.limits.generalConstantMatrixVectorIndexing = 1;
 }
 
-EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type) 
+EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
 {
-    switch (shader_type) 
+    switch (shader_type)
     {
         case VK_SHADER_STAGE_VERTEX_BIT:                    return EShLangVertex;
         case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:      return EShLangTessControl;
@@ -232,13 +232,13 @@ VertexAttribBaseType FromSPIRType(const spirv_cross::SPIRType::BaseType type)
 
     return VertexAttribBaseType::MAX;
 }
-    
+
 char *new_strcpy(const char *src)
 {
     size_t len=1+strlen(src);
 
     char *str=new char[len];
-            
+
     memcpy(str,src,len);
 
     return str;
@@ -420,7 +420,7 @@ void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,co
     {
         strcpy(sr->name,sp->GetName(obj).c_str());
         sr->set = sp->GetDescriptorSet(obj);
-        sr->binding=sp->GetBinding(obj);       
+        sr->binding=sp->GetBinding(obj);
 
         ++sr;
     }
@@ -466,7 +466,110 @@ void OutputSubpassInput(ShaderResourceData<SubpassInput> *ssd, ShaderParse* sp, 
     }
 }
 
-extern "C" 
+// ---------------------------------------------------------------------------
+// PrepareShaderSource
+//
+// Robustly builds the final GLSL/HLSL text that is fed to glslang:
+//
+//  1. Strip UTF-8 BOM (EF BB BF) if present.
+//  2. Skip any leading whitespace/blank lines to locate the real first
+//     directive.
+//  3. If a #version line is found first:
+//       • copy everything up to and including that line's newline,
+//       • append the extension block,
+//       • append the remainder of the source.
+//     This keeps #version as the very first directive, which glslang
+//     requires.  (Using setPreamble() would prepend text BEFORE
+//     #version and trigger "'#version' : must occur first in shader".)
+//  4. If NO #version line is found (e.g. pure-include or HLSL source):
+//       • prepend the extension block so the extensions are still active.
+// ---------------------------------------------------------------------------
+static std::string PrepareShaderSource(const char *shader_source,
+                                       const std::string &extensions)
+{
+    if (!shader_source || shader_source[0] == '\0')
+        return {};
+
+    // 1. Skip UTF-8 BOM (EF BB BF).
+    const unsigned char *src = reinterpret_cast<const unsigned char *>(shader_source);
+    if (src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF)
+        src += 3;
+    const char *text = reinterpret_cast<const char *>(src);
+
+    // 2. Walk forward, skipping whitespace lines, to find the first
+    //    non-blank character.  We remember the scan position so we can
+    //    still emit leading blank lines verbatim in the output (only the
+    //    logical first directive matters for the #version check).
+    const char *p = text;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+        ++p;
+
+    // 3. Check whether the first real directive is #version.
+    const bool has_version = (std::strncmp(p, "#version", 8) == 0);
+
+    std::string result;
+    result.reserve(std::strlen(text) + extensions.size() + 4);
+
+    if (has_version)
+    {
+        // Find the end of the #version line (include the '\n').
+        const char *eol = std::strchr(p, '\n');
+        if (eol)
+        {
+            // Copy everything up to and including the #version newline.
+            result.append(text, eol - text + 1);
+            // Inject extensions right after #version.
+            result += extensions;
+            // Append the rest of the shader.
+            result += (eol + 1);
+        }
+        else
+        {
+            // #version line has no trailing newline (edge case).
+            result += text;
+            result += '\n';
+            result += extensions;
+        }
+    }
+    else
+    {
+        // No #version found — prepend extensions so they are still active.
+        result += extensions;
+        result += text;
+    }
+
+    return result;
+}
+
+// Annotate every line of a GLSL source string with 1-based line numbers so
+// that glslang error messages (which reference line numbers) can be correlated
+// directly with the source that was actually fed to the compiler.
+static std::string FormatSourceWithLineNumbers(const std::string &src)
+{
+    std::string out;
+    out.reserve(src.size() + src.size() / 20);  // rough estimate
+
+    int line = 1;
+    std::size_t pos = 0;
+    while (pos <= src.size())
+    {
+        const std::size_t eol = src.find('\n', pos);
+        const std::size_t end = (eol == std::string::npos) ? src.size() : eol;
+
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%4d | ", line++);
+        out += buf;
+        out.append(src, pos, end - pos);
+        out += '\n';
+
+        if (eol == std::string::npos)
+            break;
+        pos = eol + 1;
+    }
+    return out;
+}
+
+extern "C"
 {
     bool InitShaderCompiler()
     {
@@ -502,7 +605,7 @@ extern "C"
     {
         delete spv;
     }
-    
+
     SPVData *Shader2SPV(
         const uint32_t      shader_stage,
         const char *        shader_source,
@@ -523,7 +626,7 @@ extern "C"
 
         // Enable SPIR-V and Vulkan rules when parsing GLSL/HLSL
         EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
-        
+
         if (compile_info != nullptr)
         {
             if (compile_info->shader_type == ShaderLanguageType::HLSL)
@@ -542,13 +645,18 @@ extern "C"
             }
         }
 
-        // 始终启用 GL_GOOGLE_include_directive 以支持 #include 指令
-        std::string combined_preamble = "#extension GL_GOOGLE_include_directive : require\n";
-        if(compile_info && compile_info->preamble && compile_info->preamble[0] != '\0')
-            combined_preamble += compile_info->preamble;
-        shader.setPreamble(combined_preamble.c_str());
+        // Build the extension block.
+        std::string extensions =
+            "#extension GL_GOOGLE_include_directive : require\n"
+            "#extension GL_EXT_scalar_block_layout : require\n";
+        if (compile_info && compile_info->preamble && compile_info->preamble[0] != '\0')
+            extensions += compile_info->preamble;
 
-        shaderStrings[0] = shader_source;
+        // PrepareShaderSource: strips BOM, injects extensions after #version
+        // (or prepends them when no #version is present).
+        const std::string modified_source = PrepareShaderSource(shader_source, extensions);
+
+        shaderStrings[0] = modified_source.c_str();
         shader.setStrings(shaderStrings, 1);
 
 //        shader.setEnvInput(source,stage,glslang::EShClientVulkan,);
@@ -557,12 +665,17 @@ extern "C"
         shader.setEnvInput(source,stage,glslang::EShClientVulkan,compile_info->vulkan_version);
         shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)(compile_info->spv_version));
 
-        if (!shader.parse(&Resources, 
+        if (!shader.parse(&Resources,
                           110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
-                          false, 
-                          messages, 
+                          false,
+                          messages,
                           includer))
-            return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
+        {
+            std::string log = shader.getInfoLog() ? shader.getInfoLog() : "";
+            log += "\n[Assembled shader source]\n";
+            log += FormatSourceWithLineNumbers(modified_source);
+            return new SPVData(log.c_str(), shader.getInfoDebugLog());
+        }
 
         program.addShader(&shader);
 
@@ -570,10 +683,13 @@ extern "C"
         // Program-level processing...
         //
 
-        if (!program.link(messages)) 
+        if (!program.link(messages))
         {
-            fflush(stdout);            
-            return(new SPVData(shader.getInfoLog(),shader.getInfoDebugLog()));
+            fflush(stdout);
+            std::string log = shader.getInfoLog() ? shader.getInfoLog() : "";
+            log += "\n[Assembled shader source]\n";
+            log += FormatSourceWithLineNumbers(modified_source);
+            return new SPVData(log.c_str(), shader.getInfoDebugLog());
         }
 
         std::vector<uint32_t> spirv;
@@ -649,8 +765,8 @@ extern "C"
             return data;
         }
         else return new SPVData(("Error: Could not open shader file \"" + std::string(shader_path) + "\"!").data());
-    }  
-        
+    }
+
     uint32_t GetShaderStageFlagByExtName(const char *ext_name)
     {
         if (_stricmp(ext_name,"vert") == 0)return VK_SHADER_STAGE_VERTEX_BIT; else
@@ -674,7 +790,7 @@ extern "C"
             return 0;
         }
     }
-        
+
     struct GLSLCompilerInterface
     {
         bool        (*Init)();
@@ -707,11 +823,11 @@ extern "C"
         &ParseSPV,
         &FreeSPVParse
     };
-    
+
 #ifdef WIN32
     #define EXPORT_FUNC __declspec(dllexport)
 #else
-    #define EXPORT_FUNC 
+    #define EXPORT_FUNC
 #endif
 
     EXPORT_FUNC GLSLCompilerInterface *GetInterface()
