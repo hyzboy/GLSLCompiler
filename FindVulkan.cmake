@@ -65,7 +65,7 @@ else()
       PATHS
         "$ENV{VULKAN_SDK}/lib")
 
-    set(Vulkan_LIBRARIES_DIR $ENV{VULKAN_SDK}/Lib)
+    set(Vulkan_LIBRARIES_DIR $ENV{VULKAN_SDK}/lib)
 endif()
 
 set(Vulkan_LIBRARIES ${Vulkan_LIBRARY})

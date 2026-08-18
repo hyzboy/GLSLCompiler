@@ -79,16 +79,24 @@ public:
         return compiler->get_decoration(res.id,spv::DecorationInputAttachmentIndex);
     }
 
-    void GetFormat(const spirv_cross::Resource &res,spirv_cross::SPIRType::BaseType *base_type,uint8_t *vecsize)
+    void GetFormat(const spirv_cross::Resource &res,spirv_cross::SPIRType::BaseType *base_type,uint8_t *vecsize,uint8_t *col_count)
     {
         const spirv_cross::SPIRType &type=compiler->get_type(res.type_id);
 
         *base_type  =type.basetype;
         *vecsize    =type.vecsize;
+        *col_count  =(uint8_t)type.columns;
     }
 
     const uint32_t GetBufferSize(const spirv_cross::Resource& res)const
     {
         return (uint32_t)(compiler->get_declared_struct_size(compiler->get_type(res.base_type_id)));
+    }
+
+    const uint32_t GetArraySize(const spirv_cross::Resource& res)const
+    {
+        const spirv_cross::SPIRType &type=compiler->get_type(res.type_id);
+        if(type.array.empty())return 0;
+        return type.array[0];
     }
 };//class ShaderParse
