@@ -14,6 +14,7 @@ IF(USE_PRIVATE_SPIRV_CROSS)
     include("FindVulkan.cmake")
 
     include_directories(${Vulkan_INCLUDE_DIRS})
+    include_directories(${Vulkan_INCLUDE_DIRS}/spirv_cross)
 
     message("Vulkan Include: " ${Vulkan_INCLUDE_DIRS})
     message("Vulkan Library: " ${Vulkan_LIBRARIES_DIR})

@@ -795,6 +795,10 @@ extern "C"
 
     struct GLSLCompilerInterface
     {
+        // 接口 ABI 版本：必须与宿主 kGLSLCompilerInterfaceABIVersion(ShaderGen/GLSLCompiler.cpp) 同步，
+        // 宿主按首字段校验，防止 glslang 升版导致结构布局漂移后静默错位。
+        uint32_t    abi_version;
+
         bool        (*Init)();
         void        (*Close)();
 
@@ -813,6 +817,8 @@ extern "C"
 
     static GLSLCompilerInterface plug_in_interface
     {
+        1,                                                  //abi_version,与宿主 kGLSLCompilerInterfaceABIVersion=1 同步
+
         &InitShaderCompiler,
         &CloseShaderCompiler,
         &GetLimit,
