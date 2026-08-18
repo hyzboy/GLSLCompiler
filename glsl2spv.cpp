@@ -680,11 +680,7 @@ extern "C"
         // Build the extension block.
         std::string extensions =
             "#extension GL_GOOGLE_include_directive : require\n"
-            "#extension GL_EXT_scalar_block_layout : require\n"
-            // SSBO 顶点输入：gl_BaseVertex（firstVertex）读取必需。
-            // 旧 glslang 的 Vulkan 符号表未注册 gl_BaseVertex（KHR 扩展名也不接受），
-            // 但 GL_ARB_shader_draw_parameters 的 gl_BaseVertexARB 可用（映射 SPIR-V BaseVertex）
-            "#extension GL_ARB_shader_draw_parameters : require\n";
+            "#extension GL_EXT_scalar_block_layout : require\n";
         if (compile_info && compile_info->preamble && compile_info->preamble[0] != '\0')
             extensions += compile_info->preamble;
 
