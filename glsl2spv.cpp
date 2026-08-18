@@ -650,6 +650,15 @@ extern "C"
         // Enable SPIR-V and Vulkan rules when parsing GLSL/HLSL
         EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
 
+        // 客户端环境版本决定 Vulkan 特性可用性（gl_BaseVertex = Vulkan 1.1+）。
+        // 注意 MakeVkVersion 编码与 glslang EShTargetVulkan_* 枚举一致
+        //（(1<<22)|(minor<<12)）；未设置时 glslang 客户端版本默认 0 → 1.1+ 特性不可用。
+        if (compile_info != nullptr)
+        {
+            shader.setEnvClient(glslang::EShClientVulkan,
+                                (glslang::EShTargetClientVersion)compile_info->vulkan_version);
+        }
+
         if (compile_info != nullptr)
         {
             if (compile_info->shader_type == ShaderLanguageType::HLSL)
@@ -671,7 +680,11 @@ extern "C"
         // Build the extension block.
         std::string extensions =
             "#extension GL_GOOGLE_include_directive : require\n"
-            "#extension GL_EXT_scalar_block_layout : require\n";
+            "#extension GL_EXT_scalar_block_layout : require\n"
+            // SSBO 顶点输入：gl_BaseVertex（firstVertex）读取必需。
+            // 旧 glslang 的 Vulkan 符号表未注册 gl_BaseVertex（KHR 扩展名也不接受），
+            // 但 GL_ARB_shader_draw_parameters 的 gl_BaseVertexARB 可用（映射 SPIR-V BaseVertex）
+            "#extension GL_ARB_shader_draw_parameters : require\n";
         if (compile_info && compile_info->preamble && compile_info->preamble[0] != '\0')
             extensions += compile_info->preamble;
 
