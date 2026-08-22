@@ -7,153 +7,155 @@ include("compiler.cmake")
 include("system_bit.cmake")
 include("output_path.cmake")
 
-# ---------------------------------------------------------------------------
-# USE_GLSLANG_SUBMODULE (default ON)
-#   ON  – build glslang / SPIRV-Cross / SPIRV-Tools from the git submodule.
-#         No external dependencies required; works out-of-the-box after
-#         `git submodule update --init --recursive`.
-#   OFF – find pre-built libraries.  Search order (first match wins):
-#           1. Standalone Vulkan SDK  ($VULKAN_SDK environment variable)
-#           2. vcpkg                  (automatic when CMAKE_TOOLCHAIN_FILE points
-#                                      to vcpkg; works on Windows / Linux / macOS)
-#           3. System package paths   (Linux: apt/dnf/pacman; macOS: Homebrew/MacPorts)
-# ---------------------------------------------------------------------------
-option(USE_GLSLANG_SUBMODULE
-    "Build glslang and SPIRV-Cross from the git submodule (ON) or use system/SDK/vcpkg (OFF)"
-    ON)
+# -------------------------------------------------------------------
+# SDK / vcpkg / system build
+# -------------------------------------------------------------------
 
-IF(USE_GLSLANG_SUBMODULE)
+# 1. Vulkan SDK root: the -DVULKAN_SDK_DIR=... cache variable wins, otherwise
+#    fall back to the VULKAN_SDK environment variable.  The root is
+#    prepended to the CMake search path so that find_path / find_library
+#    prefer the SDK over the OS.
+set(VULKAN_SDK_DIR "" CACHE PATH "Vulkan SDK root directory (overrides the VULKAN_SDK env var)")
+if(VULKAN_SDK_DIR)
+    set(_vulkan_sdk_root "${VULKAN_SDK_DIR}")
+else()
+    set(_vulkan_sdk_root "$ENV{VULKAN_SDK}")
+endif()
 
-    # -------------------------------------------------------------------
-    # Submodule build – compile everything from source
-    # -------------------------------------------------------------------
-    add_subdirectory(SPIRV-Cross)
-    add_subdirectory(SPIRV-Cross/external/glslang)
-    add_subdirectory(SPIRV-Cross/external/spirv-tools)
-
-    include_directories(SPIRV-Cross/external)
-
-    set(VULKAN_SPIRV_LIBS
-        GenericCodeGen
-        glslang
-        MachineIndependent
-        OSDependent
-        SPIRV
-        SPIRV-Tools
-        SPIRV-Tools-opt
-        spirv-cross-core)
-
-ELSE()
-
-    # -------------------------------------------------------------------
-    # System / SDK / vcpkg build
-    # -------------------------------------------------------------------
-
-    # 1. If $VULKAN_SDK is set, prepend it to the CMake search path so that
-    #    find_package / find_library / find_path prefer the SDK over the OS.
-    if(DEFINED ENV{VULKAN_SDK})
-        message(STATUS "Vulkan SDK detected: $ENV{VULKAN_SDK}")
-        list(INSERT CMAKE_PREFIX_PATH 0 "$ENV{VULKAN_SDK}")
+if(_vulkan_sdk_root)
+    if(NOT EXISTS "${_vulkan_sdk_root}")
+        message(WARNING "VULKAN_SDK points to a missing directory: ${_vulkan_sdk_root}")
+    else()
+        message(STATUS "Vulkan SDK detected: ${_vulkan_sdk_root}")
+        list(INSERT CMAKE_PREFIX_PATH 0 "${_vulkan_sdk_root}")
         if(WIN32)
-            include_directories("$ENV{VULKAN_SDK}/Include")
-            link_directories("$ENV{VULKAN_SDK}/Lib")
+            set(SDK_INCLUDE_DIR "${_vulkan_sdk_root}/Include")
+            set(SDK_LIB_DIR     "${_vulkan_sdk_root}/Lib")
         else()
-            include_directories("$ENV{VULKAN_SDK}/include")
-            link_directories("$ENV{VULKAN_SDK}/lib")
+            set(SDK_INCLUDE_DIR "${_vulkan_sdk_root}/include")
+            set(SDK_LIB_DIR     "${_vulkan_sdk_root}/lib")
         endif()
+        include_directories("${SDK_INCLUDE_DIR}")
+        link_directories("${SDK_LIB_DIR}")
     endif()
+endif()
 
-    # -------------------------------------------------------------------
-    # 2. glslang  (provides GlslangToSpv + SPIRV compilation)
-    #    cmake config available from: Vulkan SDK ≥ 1.2, vcpkg, system
-    # -------------------------------------------------------------------
-    find_package(glslang CONFIG QUIET)
-    if(glslang_FOUND)
-        message(STATUS "glslang found via CMake config (version ${glslang_VERSION})")
-        if(TARGET glslang::glslang)
-            # Modern namespaced targets (vcpkg, Vulkan SDK ≥ 1.3, recent distros)
-            set(GLSLANG_LIBS
-                glslang::glslang
-                glslang::MachineIndependent
-                glslang::GenericCodeGen
-                glslang::OSDependent
-                glslang::SPIRV)
-            if(TARGET glslang::glslang-default-resource-limits)
-                list(APPEND GLSLANG_LIBS glslang::glslang-default-resource-limits)
-            endif()
-        else()
-            # Older cmake configs that export un-namespaced targets
-            set(GLSLANG_LIBS glslang SPIRV OSDependent MachineIndependent GenericCodeGen)
-        endif()
-    else()
-        # Manual fallback: locate headers and libraries by path
-        message(STATUS "glslang CMake config not found – falling back to manual search")
-        find_path(GLSLANG_INCLUDE_DIR
-            NAMES glslang/SPIRV/GlslangToSpv.h
-            HINTS "$ENV{VULKAN_SDK}/include" "$ENV{VULKAN_SDK}/Include")
-        if(GLSLANG_INCLUDE_DIR)
-            include_directories("${GLSLANG_INCLUDE_DIR}")
-        endif()
-        find_library(GLSLANG_LIB_glslang        NAMES glslang)
-        find_library(GLSLANG_LIB_SPIRV          NAMES SPIRV)
-        find_library(GLSLANG_LIB_OSDependent    NAMES OSDependent)
-        find_library(GLSLANG_LIB_MachineIndep   NAMES MachineIndependent)
-        find_library(GLSLANG_LIB_GenericCodeGen NAMES GenericCodeGen)
+# -------------------------------------------------------------------
+# Helper: locate a pre-built library and assemble a linkable
+# `<base>_LIBRARY` variable.  Release and debug names are searched
+# separately - the Vulkan SDK appends a 'd' suffix to its debug libs
+# (spirv-cross-core.lib vs spirv-cross-cored.lib) - and
+# select_library_configurations() pairs them so Debug builds link the
+# debug libs (avoids MSVC LNK2038 runtime-library mismatch).
+# -------------------------------------------------------------------
+include(SelectLibraryConfigurations)
+
+function(sdk_find_library base)
+    set(_release_names ${ARGN})
+    set(_debug_names "")
+    foreach(_n IN LISTS _release_names)
+        list(APPEND _debug_names "${_n}d")
+    endforeach()
+
+    find_library(${base}_LIBRARY_RELEASE NAMES ${_release_names} HINTS ${SDK_LIB_DIR})
+    find_library(${base}_LIBRARY_DEBUG   NAMES ${_debug_names}   HINTS ${SDK_LIB_DIR})
+
+    select_library_configurations(${base})
+
+    set(${base}_LIBRARY "${${base}_LIBRARY}" PARENT_SCOPE)
+endfunction()
+
+# -------------------------------------------------------------------
+# 2. glslang  (provides GlslangToSpv + SPIR-V generation)
+#    The Vulkan SDK ships glslang.lib / SPIRV.lib / OSDependent.lib /
+#    MachineIndependent.lib / GenericCodeGen.lib (+ 'd'-suffixed debug
+#    variants).  vcpkg's glslang port installs a CMake config instead,
+#    which is picked up by find_package below.
+# -------------------------------------------------------------------
+find_package(glslang CONFIG QUIET)
+if(glslang_FOUND)
+    message(STATUS "glslang found via CMake config (version ${glslang_VERSION})")
+    if(TARGET glslang::glslang)
+        # Modern namespaced targets (vcpkg, recent distros)
         set(GLSLANG_LIBS
-            ${GLSLANG_LIB_glslang}
-            ${GLSLANG_LIB_SPIRV}
-            ${GLSLANG_LIB_OSDependent}
-            ${GLSLANG_LIB_MachineIndep}
-            ${GLSLANG_LIB_GenericCodeGen})
-    endif()
-
-    # -------------------------------------------------------------------
-    # 3. SPIRV-Cross  (provides spirv_cross.hpp + spirv-cross-core)
-    #    Note: NOT bundled in the standard Vulkan SDK; install separately
-    #    via vcpkg (`vcpkg install spirv-cross`), apt (`libspirv-cross-dev`),
-    #    or Homebrew (`brew install spirv-cross`).
-    # -------------------------------------------------------------------
-    find_package(spirv_cross_core CONFIG QUIET)
-    if(spirv_cross_core_FOUND)
-        message(STATUS "spirv-cross-core found via CMake config")
-        set(SPIRV_CROSS_LIBS spirv-cross-core)
-    else()
-        message(STATUS "spirv_cross_core CMake config not found – falling back to manual search")
-        find_library(SPIRV_CROSS_LIB NAMES spirv-cross-core spirv_cross_core)
-        set(SPIRV_CROSS_LIBS ${SPIRV_CROSS_LIB})
-        # Locate headers: system installs put them in spirv_cross/ subdirectory
-        find_path(SPIRV_CROSS_INCLUDE_DIR
-            NAMES spirv_cross.hpp spirv_cross/spirv_cross.hpp)
-        if(SPIRV_CROSS_INCLUDE_DIR)
-            include_directories("${SPIRV_CROSS_INCLUDE_DIR}")
+            glslang::glslang
+            glslang::MachineIndependent
+            glslang::GenericCodeGen
+            glslang::OSDependent
+            glslang::SPIRV)
+        if(TARGET glslang::glslang-default-resource-limits)
+            list(APPEND GLSLANG_LIBS glslang::glslang-default-resource-limits)
         endif()
-    endif()
-
-    # -------------------------------------------------------------------
-    # 4. SPIRV-Tools  (optimizer; bundled in Vulkan SDK and vcpkg)
-    # -------------------------------------------------------------------
-    find_package(SPIRV-Tools CONFIG QUIET)
-    if(SPIRV-Tools_FOUND)
-        message(STATUS "SPIRV-Tools found via CMake config")
-        set(SPIRV_TOOLS_LIBS SPIRV-Tools SPIRV-Tools-opt)
     else()
-        find_library(SPIRV_TOOLS_LIB     NAMES SPIRV-Tools)
-        find_library(SPIRV_TOOLS_OPT_LIB NAMES SPIRV-Tools-opt)
-        if(SPIRV_TOOLS_LIB)
-            set(SPIRV_TOOLS_LIBS ${SPIRV_TOOLS_LIB} ${SPIRV_TOOLS_OPT_LIB})
-            message(STATUS "SPIRV-Tools found via manual search")
-        else()
-            set(SPIRV_TOOLS_LIBS "")
-            message(WARNING "SPIRV-Tools not found; optimisation passes will be unavailable")
-        endif()
+        # Older cmake configs that export un-namespaced targets
+        set(GLSLANG_LIBS glslang SPIRV OSDependent MachineIndependent GenericCodeGen)
     endif()
+else()
+    # Manual fallback: locate headers and libraries by path
+    message(STATUS "glslang CMake config not found - searching for pre-built libraries")
+    sdk_find_library(glslang             glslang)
+    sdk_find_library(glslang_SPIRV       SPIRV)
+    sdk_find_library(glslang_OSDependent OSDependent)
+    sdk_find_library(glslang_MachineInd  MachineIndependent)
+    sdk_find_library(glslang_GenericCode GenericCodeGen)
+    set(GLSLANG_LIBS
+        ${glslang_LIBRARY}
+        ${glslang_SPIRV_LIBRARY}
+        ${glslang_OSDependent_LIBRARY}
+        ${glslang_MachineInd_LIBRARY}
+        ${glslang_GenericCode_LIBRARY})
+endif()
 
-    set(VULKAN_SPIRV_LIBS
-        ${GLSLANG_LIBS}
-        ${SPIRV_CROSS_LIBS}
-        ${SPIRV_TOOLS_LIBS})
+find_path(GLSLANG_INCLUDE_DIR
+    NAMES glslang/SPIRV/GlslangToSpv.h
+    HINTS ${SDK_INCLUDE_DIR})
+if(GLSLANG_INCLUDE_DIR)
+    include_directories("${GLSLANG_INCLUDE_DIR}")
+endif()
 
-ENDIF()
+# -------------------------------------------------------------------
+# 3. SPIRV-Cross  (provides spirv_cross.hpp + spirv-cross-core)
+#    Bundled in the Vulkan SDK (Include/spirv_cross/ +
+#    Lib/spirv-cross-core[.d].lib).  This project only uses the
+#    reflection API (spirv_cross::Compiler), so spirv-cross-core is
+#    the only SPIRV-Cross library required.
+#    Sources include it unprefixed (`#include "spirv_cross.hpp"`),
+#    so the include directory must point at the spirv_cross/ folder.
+# -------------------------------------------------------------------
+sdk_find_library(spirv_cross_core spirv-cross-core)
+set(SPIRV_CROSS_LIBS ${spirv_cross_core_LIBRARY})
+
+if(DEFINED SDK_INCLUDE_DIR)
+    set(_spirv_cross_hints "${SDK_INCLUDE_DIR}/spirv_cross")
+endif()
+find_path(SPIRV_CROSS_INCLUDE_DIR
+    NAMES spirv_cross.hpp
+    HINTS ${_spirv_cross_hints})
+if(SPIRV_CROSS_INCLUDE_DIR)
+    message(STATUS "SPIRV-Cross headers: ${SPIRV_CROSS_INCLUDE_DIR}")
+    include_directories("${SPIRV_CROSS_INCLUDE_DIR}")
+else()
+    message(FATAL_ERROR
+        "SPIRV-Cross headers (spirv_cross.hpp) not found. "
+        "Set -DVULKAN_SDK_DIR=... or the VULKAN_SDK env var to a valid Vulkan SDK "
+        "(current root: '${_vulkan_sdk_root}'), or install spirv-cross via "
+        "vcpkg/system package.")
+endif()
+
+# -------------------------------------------------------------------
+# 4. SPIRV-Tools  (optimizer)
+#    glslang's SpvTools.obj references spvtools::Optimizer passes, so
+#    SPIRV-Tools-opt is REQUIRED at link time even though this project
+#    never calls the optimizer directly.
+# -------------------------------------------------------------------
+sdk_find_library(SPIRV_Tools     SPIRV-Tools)
+sdk_find_library(SPIRV_Tools_opt SPIRV-Tools-opt)
+set(SPIRV_TOOLS_LIBS ${SPIRV_Tools_LIBRARY} ${SPIRV_Tools_opt_LIBRARY})
+
+set(VULKAN_SPIRV_LIBS
+    ${GLSLANG_LIBS}
+    ${SPIRV_CROSS_LIBS}
+    ${SPIRV_TOOLS_LIBS})
 
 add_library(GLSLCompiler SHARED glsl2spv.cpp VKShaderParse.h GLSLCompiler.h)
 
@@ -163,6 +165,6 @@ add_library(GLSLCompilerStatic STATIC glsl2spv.cpp VKShaderParse.h GLSLCompiler.
 
 target_link_libraries(GLSLCompilerStatic PRIVATE ${VULKAN_SPIRV_LIBS})
 
-# spvfc — command-line shader compiler (GLSL/HLSL → .spvf)
+# spvfc - command-line shader compiler (GLSL/HLSL -> .spvf)
 add_executable(spvfc spvfc.cpp)
 target_link_libraries(spvfc PRIVATE GLSLCompilerStatic ${VULKAN_SPIRV_LIBS})
