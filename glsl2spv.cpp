@@ -179,6 +179,9 @@ EShLanguage FindLanguage(const VkShaderStageFlagBits shader_type)
 
         case VK_SHADER_STAGE_COMPUTE_BIT:                   return EShLangCompute;
 
+        // glslang 的 mesh/task stage 枚举只有 EShLangTaskNV/EShLangMeshNV 一名
+        //（= EShLangTask/EShLangMesh 别名）——EXT/NV 语法由 GLSL 源码里的
+        // #extension 声明决定，与这里选哪个 stage 枚举无关。
         case VK_SHADER_STAGE_TASK_BIT_EXT:                  return EShLangTaskNV;
         case VK_SHADER_STAGE_MESH_BIT_EXT:                  return EShLangMeshNV;
 
@@ -653,10 +656,16 @@ extern "C"
         // 客户端环境版本决定 Vulkan 特性可用性（gl_BaseVertex = Vulkan 1.1+）。
         // 注意 MakeVkVersion 编码与 glslang EShTargetVulkan_* 枚举一致
         //（(1<<22)|(minor<<12)）；未设置时 glslang 客户端版本默认 0 → 1.1+ 特性不可用。
+        // ── 硬性 Vulkan 1.4（2026-08 决策）：不准备支持低于 1.4 的硬件。
+        //    compile_info->vulkan_version / spv_version 字段保留（ABI 兼容），但强制
+        //    Vulkan 1.4 + SPIR-V 1.6（mesh shader EXT 需要 SPIR-V 1.6 目标）。
+        constexpr uint32_t FORCED_VULKAN_VERSION = (1u << 22) | (4u << 12);  // EShTargetVulkan_1_4
+        constexpr uint32_t FORCED_SPV_VERSION    = (1u << 16) | (6u << 8);   // EShTargetSpv_1_6
+
         if (compile_info != nullptr)
         {
             shader.setEnvClient(glslang::EShClientVulkan,
-                                (glslang::EShTargetClientVersion)compile_info->vulkan_version);
+                                (glslang::EShTargetClientVersion)FORCED_VULKAN_VERSION);
         }
 
         if (compile_info != nullptr)
@@ -694,8 +703,8 @@ extern "C"
 //        shader.setEnvInput(source,stage,glslang::EShClientVulkan,);
 //        shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
 
-        shader.setEnvInput(source,stage,glslang::EShClientVulkan,compile_info->vulkan_version);
-        shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)(compile_info->spv_version));
+        shader.setEnvInput(source,stage,glslang::EShClientVulkan,FORCED_VULKAN_VERSION);
+        shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)FORCED_SPV_VERSION);
 
         if (!shader.parse(&Resources,
                           110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
