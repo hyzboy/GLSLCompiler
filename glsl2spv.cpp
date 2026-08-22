@@ -156,6 +156,20 @@ void init_default_build_in_resource()
     default_build_in_resource.maxTaskWorkGroupSizeY_NV = 1;
     default_build_in_resource.maxTaskWorkGroupSizeZ_NV = 1;
     default_build_in_resource.maxMeshViewCountNV = 4;
+
+    // EXT mesh shader（跨厂商标准 GL_EXT_mesh_shader）limits——默认兜底值。
+    // 实际值由主程序经 SetLimit(TBuiltInResource*) 传入（VKPhysicalDevice 查询
+    // VkPhysicalDeviceMeshShaderPropertiesEXT 后经 PhysicalDeviceProfileLite → SetLimit 覆盖）。
+    // 未收到 profile 时用保守值保证可编译（local_size 校验通过）。
+    default_build_in_resource.maxMeshOutputVerticesEXT   = 256;
+    default_build_in_resource.maxMeshOutputPrimitivesEXT = 256;
+    default_build_in_resource.maxMeshWorkGroupSizeX_EXT  = 128;
+    default_build_in_resource.maxMeshWorkGroupSizeY_EXT  = 128;
+    default_build_in_resource.maxMeshWorkGroupSizeZ_EXT  = 128;
+    default_build_in_resource.maxTaskWorkGroupSizeX_EXT  = 32;
+    default_build_in_resource.maxTaskWorkGroupSizeY_EXT  = 1;
+    default_build_in_resource.maxTaskWorkGroupSizeZ_EXT  = 1;
+    default_build_in_resource.maxMeshViewCountEXT        = 4;
     default_build_in_resource.limits.nonInductiveForLoops = 1;
     default_build_in_resource.limits.whileLoops = 1;
     default_build_in_resource.limits.doWhileLoops = 1;
