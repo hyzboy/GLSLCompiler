@@ -1,4 +1,4 @@
-/*
+﻿/*
  * spvfc.cpp  —  Shader Flat File Compiler
  *
  * Compiles GLSL or HLSL shader source files to the .spvf format (raw SPIR-V

@@ -645,7 +645,7 @@ extern "C"
     {
         return d ? d->debug_log : nullptr;
     }
-    
+
     SPVData *Shader2SPV(
         const uint32_t      shader_stage,
         const char *        shader_source,

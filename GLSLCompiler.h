@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 /*
  * GLSLCompiler.h — Public C++ API header for GLSLCompiler

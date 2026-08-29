@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 /*
  * SPVParseFlat.h  —  "Shader Flat File" format, version 2
