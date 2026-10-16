@@ -594,6 +594,47 @@ static std::string FormatSourceWithLineNumbers(const std::string &src)
     return out;
 }
 
+/* -----------------------------------------------------------------------
+ * Target version handling
+ *
+ * The versions declared in CompileInfo are the source of truth; 0 means "use
+ * the build default".  They used to be ignored in favour of a hard-coded
+ * 1.4/1.6, which is why the CLI could advertise 1.0-1.3 while the compiler
+ * always emitted SPIR-V 1.6.  An unsupported value now fails loudly instead
+ * of being silently substituted.
+ * --------------------------------------------------------------------- */
+
+static constexpr uint32_t kDefaultVulkanVersion = (1u << 22) | (4u << 12);  /* EShTargetVulkan_1_4 */
+static constexpr uint32_t kDefaultSpvVersion    = (1u << 16) | (6u << 8);   /* EShTargetSpv_1_6    */
+
+static bool IsSupportedVulkanVersion(const uint32_t version)
+{
+    switch (version)
+    {
+        case (1u << 22)             : return true;  /* 1.0 */
+        case (1u << 22) | (1u << 12): return true;  /* 1.1 */
+        case (1u << 22) | (2u << 12): return true;  /* 1.2 */
+        case (1u << 22) | (3u << 12): return true;  /* 1.3 */
+        case (1u << 22) | (4u << 12): return true;  /* 1.4 */
+        default                     : return false;
+    }
+}
+
+static bool IsSupportedSpvVersion(const uint32_t version)
+{
+    switch (version)
+    {
+        case (1u << 16)             : return true;  /* 1.0 */
+        case (1u << 16) | (1u << 8) : return true;  /* 1.1 */
+        case (1u << 16) | (2u << 8) : return true;  /* 1.2 */
+        case (1u << 16) | (3u << 8) : return true;  /* 1.3 */
+        case (1u << 16) | (4u << 8) : return true;  /* 1.4 */
+        case (1u << 16) | (5u << 8) : return true;  /* 1.5 */
+        case (1u << 16) | (6u << 8) : return true;  /* 1.6 */
+        default                     : return false;
+    }
+}
+
 extern "C"
 {
     bool InitShaderCompiler()
@@ -661,10 +702,12 @@ extern "C"
         glslang::TProgram       program;
         DirStackFileIncluder    includer;
         const bool invalid_include_root = compile_info
-            && (compile_info->includes_count > 1
-             || (compile_info->includes_count == 1
-              && (!compile_info->includes || !compile_info->includes[0]
-               || !compile_info->includes[0][0])));
+            && (compile_info->includes_count > 2
+             || (compile_info->includes_count > 0
+              && (!compile_info->includes
+               || !compile_info->includes[0] || !compile_info->includes[0][0]
+               || (compile_info->includes_count == 2
+                && (!compile_info->includes[1] || !compile_info->includes[1][0])))));
 
         const char *shaderStrings[1];
         TBuiltInResource Resources=default_build_in_resource;
@@ -673,18 +716,19 @@ extern "C"
         EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
 
         // 客户端环境版本决定 Vulkan 特性可用性（gl_BaseVertex = Vulkan 1.1+）。
-        // 注意 MakeVkVersion 编码与 glslang EShTargetVulkan_* 枚举一致
-        //（(1<<22)|(minor<<12)）；未设置时 glslang 客户端版本默认 0 → 1.1+ 特性不可用。
-        // ── 硬性 Vulkan 1.4（2026-08 决策）：不准备支持低于 1.4 的硬件。
-        //    compile_info->vulkan_version / spv_version 字段保留（ABI 兼容），但强制
-        //    Vulkan 1.4 + SPIR-V 1.6（mesh shader EXT 需要 SPIR-V 1.6 目标）。
-        constexpr uint32_t FORCED_VULKAN_VERSION = (1u << 22) | (4u << 12);  // EShTargetVulkan_1_4
-        constexpr uint32_t FORCED_SPV_VERSION    = (1u << 16) | (6u << 8);   // EShTargetSpv_1_6
+        // 注意编码与 glslang EShTargetVulkan_* 枚举一致（(1<<22)|(minor<<12)）；
+        // 调用方声明 0 时使用构建默认 1.4 + SPIR-V 1.6（mesh shader EXT 需要 1.6）。
+        const uint32_t vulkan_version = (compile_info && compile_info->vulkan_version)
+                                      ? compile_info->vulkan_version : kDefaultVulkanVersion;
+        const uint32_t spv_version    = (compile_info && compile_info->spv_version)
+                                      ? compile_info->spv_version : kDefaultSpvVersion;
+        const bool invalid_target = !IsSupportedVulkanVersion(vulkan_version)
+                                 || !IsSupportedSpvVersion(spv_version);
 
         if (compile_info != nullptr)
         {
             shader.setEnvClient(glslang::EShClientVulkan,
-                                (glslang::EShTargetClientVersion)FORCED_VULKAN_VERSION);
+                                (glslang::EShTargetClientVersion)vulkan_version);
         }
 
         if (compile_info != nullptr)
@@ -699,8 +743,15 @@ extern "C"
                 source = glslang::EShSourceHlsl;
             }
 
-            if (!invalid_include_root && compile_info->includes_count == 1)
+            // includes[0] = shader library root；includes[1]（可选）= `generated/`
+            // 前缀专用 root。count 为 0 时不做 root 设置，等价于禁止 include。
+            if (!invalid_include_root && compile_info->includes_count > 0)
+            {
                 includer.setRootDirectory(compile_info->includes[0]);
+
+                if (compile_info->includes_count == 2)
+                    includer.setGeneratedRootDirectory(compile_info->includes[1]);
+            }
         }
 
         // Build the extension block.
@@ -720,18 +771,24 @@ extern "C"
 //        shader.setEnvInput(source,stage,glslang::EShClientVulkan,);
 //        shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
 
-        shader.setEnvInput(source,stage,glslang::EShClientVulkan,FORCED_VULKAN_VERSION);
-        shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)FORCED_SPV_VERSION);
+        shader.setEnvInput(source,stage,glslang::EShClientVulkan,vulkan_version);
+        shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)spv_version);
 
-        if (invalid_include_root || !shader.parse(&Resources,
+        if (invalid_target || invalid_include_root || !shader.parse(&Resources,
                           110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
                           false,
                           messages,
                           includer))
         {
-            std::string log = invalid_include_root
-                ? "GLSLCompiler requires a single non-empty include root, not a search path list."
-                : (shader.getInfoLog() ? shader.getInfoLog() : "");
+            std::string log;
+            if (invalid_target)
+                log = "GLSLCompiler: unsupported target version (Vulkan: 1.0-1.4, SPIR-V: 1.0-1.6).";
+            else if (invalid_include_root)
+                log = "GLSLCompiler: includes must be [shader_library_root] or "
+                      "[shader_library_root, generated_root], both non-empty; "
+                      "a search-path list is not supported.";
+            else
+                log = shader.getInfoLog() ? shader.getInfoLog() : "";
             log += "\n[Assembled shader source]\n";
             log += FormatSourceWithLineNumbers(modified_source);
             return new SPVData(log.c_str(), shader.getInfoDebugLog());

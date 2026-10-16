@@ -10,11 +10,12 @@
  * Options:
  *   -o <file>       Output .spvf path  (single input only)
  *   -e <name>       Entry-point name   [default: main]
- *   -I <dir>        Set the single include root (also -I<dir> form)
+ *   -I <dir>        Include root: 1st = shader library root, optional 2nd = the
+ *                   root used for `generated/` includes (also -I<dir> form)
  *   -D <macro>      Add preprocessor define (also -D<macro>=value form)
  *   --hlsl          Treat all inputs as HLSL
- *   --vulkan <ver>  Target Vulkan version: 1.0 (default) 1.1 1.2 1.3
- *   --spv <ver>     Target SPIR-V version: 1.0 (default) 1.1 .. 1.6
+ *   --vulkan <ver>  Target Vulkan version: 1.0 1.1 1.2 1.3 1.4 (default: 1.4)
+ *   --spv <ver>     Target SPIR-V version: 1.0 .. 1.6 (default: 1.6)
  *   --no-output     Compile + reflect but do not write .spvf file
  *   --no-reflect    Suppress reflection text output
  *   --quiet         Suppress informational messages (errors still printed)
@@ -211,14 +212,19 @@ static void print_reflection(const char *input_path, const ShaderFlatView *v)
  * Version string → glslang constant helpers
  * ========================================================================= */
 
+/* Return the glslang encoding, or 0 when the version is not supported.  An
+ * unknown value is a hard error: silently falling back used to let the CLI
+ * advertise a target that the compiler did not actually honour. */
+
 static uint32_t parse_vulkan_ver(const char *s)
 {
     if (strcmp(s, "1.0") == 0) return (1u << 22);
     if (strcmp(s, "1.1") == 0) return (1u << 22) | (1u << 12);
     if (strcmp(s, "1.2") == 0) return (1u << 22) | (2u << 12);
     if (strcmp(s, "1.3") == 0) return (1u << 22) | (3u << 12);
-    fprintf(stderr, "[spvfc] Unknown Vulkan version '%s', defaulting to 1.0\n", s);
-    return (1u << 22);
+    if (strcmp(s, "1.4") == 0) return (1u << 22) | (4u << 12);
+    fprintf(stderr, "[spvfc] Unsupported Vulkan version '%s' (supported: 1.0 1.1 1.2 1.3 1.4)\n", s);
+    return 0;
 }
 
 static uint32_t parse_spv_ver(const char *s)
@@ -230,8 +236,8 @@ static uint32_t parse_spv_ver(const char *s)
     if (strcmp(s, "1.4") == 0) return (1u << 16) | (4u << 8);
     if (strcmp(s, "1.5") == 0) return (1u << 16) | (5u << 8);
     if (strcmp(s, "1.6") == 0) return (1u << 16) | (6u << 8);
-    fprintf(stderr, "[spvfc] Unknown SPIR-V version '%s', defaulting to 1.0\n", s);
-    return (1u << 16);
+    fprintf(stderr, "[spvfc] Unsupported SPIR-V version '%s' (supported: 1.0 .. 1.6)\n", s);
+    return 0;
 }
 
 /* =========================================================================
@@ -242,14 +248,14 @@ struct Options {
     std::vector<std::string> inputs;
     std::string              output;                   /* -o              */
     std::string              entrypoint  = "main";     /* -e              */
-    std::vector<std::string> include_dirs;             /* single -I root  */
+    std::vector<std::string> include_dirs;             /* [0] library, [1] generated/ */
     std::string              preamble;                 /* built from -D   */
     bool                     hlsl        = false;
     bool                     no_output   = false;
     bool                     no_reflect  = false;
     bool                     quiet       = false;
-    uint32_t                 vulkan_ver  = (1u << 22); /* Vulkan 1.0      */
-    uint32_t                 spv_ver     = (1u << 16); /* SPIR-V 1.0      */
+    uint32_t                 vulkan_ver  = (1u << 22) | (4u << 12); /* Vulkan 1.4 */
+    uint32_t                 spv_ver     = (1u << 16) | (6u << 8);  /* SPIR-V 1.6 */
 };
 
 /* =========================================================================
@@ -362,11 +368,11 @@ static void usage(const char *prog)
         "Options:\n"
         "  -o <file>       Output .spvf path (only valid with a single input)\n"
         "  -e <name>       Entry-point name  [default: main]\n"
-        "  -I <dir>        Set the single include root (-I<dir> also OK; not repeatable)\n"
+        "  -I <dir>        Include root (1st = shader library, optional 2nd = generated/)\n"
         "  -D <macro>      Add preprocessor define  (-D<macro>=value also OK)\n"
         "  --hlsl          Treat all inputs as HLSL source\n"
-        "  --vulkan <ver>  Target Vulkan version: 1.0 (default)  1.1  1.2  1.3\n"
-        "  --spv    <ver>  Target SPIR-V version: 1.0 (default)  1.1 .. 1.6\n"
+        "  --vulkan <ver>  Target Vulkan version: 1.0  1.1  1.2  1.3  1.4 (default: 1.4)\n"
+        "  --spv    <ver>  Target SPIR-V version: 1.0  1.1 .. 1.6 (default: 1.6)\n"
         "  --no-output     Compile and reflect but do not write .spvf files\n"
         "  --no-reflect    Suppress reflection text output\n"
         "  --quiet         Suppress informational messages (errors still shown)\n"
@@ -435,14 +441,24 @@ int main(int argc, char *argv[])
 
         /* --vulkan <ver> */
         if (strcmp(a, "--vulkan") == 0 && i + 1 < argc)
-            { opts.vulkan_ver = parse_vulkan_ver(argv[++i]); continue; }
+            { opts.vulkan_ver = parse_vulkan_ver(argv[++i]);
+              if (opts.vulkan_ver == 0) return 1;
+              continue; }
 
         /* --spv <ver> */
         if (strcmp(a, "--spv") == 0 && i + 1 < argc)
-            { opts.spv_ver = parse_spv_ver(argv[++i]); continue; }
+            { opts.spv_ver = parse_spv_ver(argv[++i]);
+              if (opts.spv_ver == 0) return 1;
+              continue; }
 
         fprintf(stderr, "[spvfc] Unknown option: %s\n\n", a);
         usage(prog);
+        return 1;
+    }
+
+    if (opts.include_dirs.size() > 2) {
+        fprintf(stderr, "[spvfc] At most two -I roots are allowed "
+                        "(1st = shader library root, 2nd = generated/ root).\n");
         return 1;
     }
 

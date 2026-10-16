@@ -7,6 +7,21 @@ namespace hgl::shader
         return ch == '/' || ch == '\\';
     }
 
+    // Task-generated sources live under a per-job directory instead of the shader
+    // library root; every other root-relative include resolves against the library.
+    // Normalize first: `generated/../common/x.glsl` collapses to `common/x.glsl`
+    // and must not be able to hop over the partition.
+    inline bool HasGeneratedPrefix(const char *path)
+    {
+        static constexpr char kPrefix[] = "generated/";
+        if (!path)
+            return false;
+        for (int i = 0; kPrefix[i]; ++i)
+            if (path[i] != kPrefix[i])
+                return false;
+        return true;
+    }
+
     // Normalize in place without permitting absolute paths or escape above root.
     inline bool NormalizeRootIncludePath(char *path)
     {

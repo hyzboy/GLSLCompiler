@@ -27,11 +27,12 @@ struct CompileInfo
 {
     ShaderLanguageType  shader_type;     /* source language                  */
     const char *        entrypoint;      /* HLSL entry-point name (or NULL)  */
-    uint32_t            includes_count;  /* 0 (no includes) or 1 (one root)   */
-    const char **       includes;        /* single root; no local fallback   */
+    uint32_t            includes_count;  /* 0 (no includes), 1 or 2 (roots)  */
+    const char **       includes;        /* [0] shader library root,         */
+                                         /* [1] optional `generated/` root   */
     const char *        preamble;        /* text prepended before source     */
-    uint32_t            vulkan_version;  /* glslang EShTargetVulkan_x_y      */
-    uint32_t            spv_version;     /* glslang EShTargetSpv_x_y         */
+    uint32_t            vulkan_version;  /* glslang EShTargetVulkan_x_y, 0=default */
+    uint32_t            spv_version;     /* glslang EShTargetSpv_x_y, 0=default    */
 };
 
 /* -----------------------------------------------------------------------

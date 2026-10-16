@@ -65,10 +65,28 @@ public:
         return readSystemPath(headerName);
     }
 
-    virtual void setRootDirectory(const std::string& dir)
+    // [0] is the shader library root; it is the only root for every include whose
+    // normalized path does not carry the `generated/` prefix.
+    virtual bool setRootDirectory(const std::string& dir)
     {
+        if (dir.empty())
+            return false;
+
         directoryStack.clear();
         directoryStack.push_back(dir);
+        return true;
+    }
+
+    // Optional second root, used only for `generated/` includes produced by the
+    // current build job.  Keeping it a separate root means a same-named file in
+    // the library (or in the CWD) can never shadow a task-generated one.
+    virtual bool setGeneratedRootDirectory(const std::string& dir)
+    {
+        if (dir.empty())
+            return false;
+
+        generatedRoot = dir;
+        return true;
     }
 
     virtual void releaseInclude(IncludeResult* result) override
@@ -89,6 +107,7 @@ public:
 protected:
     typedef char tUserDataElement;
     std::vector<std::string> directoryStack;
+    std::string generatedRoot;
     std::set<std::string> includedFiles;
 
     virtual IncludeResult* readLocalPath(const char* headerName, const char* /*includerName*/, int /*depth*/)
@@ -96,21 +115,33 @@ protected:
         if (directoryStack.size() != 1 || !headerName || !*headerName)
             return nullptr;
 
-        for (auto it = directoryStack.rbegin(); it != directoryStack.rend(); ++it) {
-            std::string path = *it + '/' + headerName;
-            std::replace(path.begin(), path.end(), '\\', '/');
-            const auto relative_start = it->length() + 1;
-            if (!hgl::shader::NormalizeRootIncludePath(path.data() + relative_start))
+        std::string relative(headerName);
+        std::replace(relative.begin(), relative.end(), '\\', '/');
+
+        // Normalize before choosing a root: folding happens here, so
+        // `generated/../common/x.glsl` lands in the library partition.
+        if (!hgl::shader::NormalizeRootIncludePath(relative.data()))
+            return nullptr;
+        relative.resize(strlen(relative.c_str()));
+
+        const std::string* root = &directoryStack[0];
+        if (hgl::shader::HasGeneratedPrefix(relative.c_str()))
+        {
+            if (generatedRoot.empty())
                 return nullptr;
-            path.resize(relative_start + strlen(path.c_str() + relative_start));
-            std::ifstream file(path, std::ios_base::binary | std::ios_base::ate);
-            if (file) {
-                includedFiles.insert(path);
-                return newIncludeResult(path, file, (int)file.tellg());
-            }
+
+            root = &generatedRoot;
         }
 
-        return nullptr;
+        std::string path = *root + '/' + relative;
+        std::replace(path.begin(), path.end(), '\\', '/');
+
+        std::ifstream file(path, std::ios_base::binary | std::ios_base::ate);
+        if (!file)
+            return nullptr;
+
+        includedFiles.insert(path);
+        return newIncludeResult(path, file, (int)file.tellg());
     }
 
     virtual IncludeResult* readSystemPath(const char* headerName)
