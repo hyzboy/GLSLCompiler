@@ -41,15 +41,15 @@
 #include <fstream>
 #include <algorithm>
 #include <set>
+#include <string.h>
 
 #include <glslang/Public/ShaderLang.h>
+#include "RootIncludePath.h"
 
-// Default include class for normal include convention of search backward
-// through the stack of active include paths (for nested includes).
-// Can be overridden to customize.
+// All includes, including nested and system includes, are root-relative.
 class DirStackFileIncluder : public glslang::TShader::Includer {
 public:
-    DirStackFileIncluder() : externalLocalDirectoryCount(0) { }
+    DirStackFileIncluder() = default;
 
     virtual IncludeResult* includeLocal(const char* headerName,
                                         const char* includerName,
@@ -65,16 +65,10 @@ public:
         return readSystemPath(headerName);
     }
 
-    // Externally set directories. E.g., from a command-line -I<dir>.
-    //  - Most-recently pushed are checked first.
-    //  - All these are checked after the parse-time stack of local directories
-    //    is checked.
-    //  - This only applies to the "local" form of #include.
-    //  - Makes its own copy of the path.
-    virtual void pushExternalLocalDirectory(const std::string& dir)
+    virtual void setRootDirectory(const std::string& dir)
     {
+        directoryStack.clear();
         directoryStack.push_back(dir);
-        externalLocalDirectoryCount = (int)directoryStack.size();
     }
 
     virtual void releaseInclude(IncludeResult* result) override
@@ -95,26 +89,22 @@ public:
 protected:
     typedef char tUserDataElement;
     std::vector<std::string> directoryStack;
-    int externalLocalDirectoryCount;
     std::set<std::string> includedFiles;
 
-    // Search for a valid "local" path based on combining the stack of include
-    // directories and the nominal name of the header.
-    virtual IncludeResult* readLocalPath(const char* headerName, const char* includerName, int depth)
+    virtual IncludeResult* readLocalPath(const char* headerName, const char* /*includerName*/, int /*depth*/)
     {
-        // Discard popped include directories, and
-        // initialize when at parse-time first level.
-        directoryStack.resize(depth + externalLocalDirectoryCount);
-        if (depth == 1)
-            directoryStack.back() = getDirectory(includerName);
+        if (directoryStack.size() != 1 || !headerName || !*headerName)
+            return nullptr;
 
-        // Find a directory that works, using a reverse search of the include stack.
         for (auto it = directoryStack.rbegin(); it != directoryStack.rend(); ++it) {
             std::string path = *it + '/' + headerName;
             std::replace(path.begin(), path.end(), '\\', '/');
+            const auto relative_start = it->length() + 1;
+            if (!hgl::shader::NormalizeRootIncludePath(path.data() + relative_start))
+                return nullptr;
+            path.resize(relative_start + strlen(path.c_str() + relative_start));
             std::ifstream file(path, std::ios_base::binary | std::ios_base::ate);
             if (file) {
-                directoryStack.push_back(getDirectory(path));
                 includedFiles.insert(path);
                 return newIncludeResult(path, file, (int)file.tellg());
             }
@@ -123,11 +113,9 @@ protected:
         return nullptr;
     }
 
-    // Search for a valid <system> path.
-    // Not implemented yet; returning nullptr signals failure to find.
-    virtual IncludeResult* readSystemPath(const char* /*headerName*/) const
+    virtual IncludeResult* readSystemPath(const char* headerName)
     {
-        return nullptr;
+        return readLocalPath(headerName, nullptr, 0);
     }
 
     // Do actual reading of the file, filling in a new include result.
@@ -139,11 +127,4 @@ protected:
         return new IncludeResult(path, content, length, content);
     }
 
-    // If no path markers, return current working directory.
-    // Otherwise, strip file name and return path leading up to it.
-    virtual std::string getDirectory(const std::string path) const
-    {
-        size_t last = path.find_last_of("/\\");
-        return last == std::string::npos ? "." : path.substr(0, last);
-    }
 };

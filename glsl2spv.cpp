@@ -660,6 +660,11 @@ extern "C"
         glslang::TShader        shader(stage);
         glslang::TProgram       program;
         DirStackFileIncluder    includer;
+        const bool invalid_include_root = compile_info
+            && (compile_info->includes_count > 1
+             || (compile_info->includes_count == 1
+              && (!compile_info->includes || !compile_info->includes[0]
+               || !compile_info->includes[0][0])));
 
         const char *shaderStrings[1];
         TBuiltInResource Resources=default_build_in_resource;
@@ -694,10 +699,8 @@ extern "C"
                 source = glslang::EShSourceHlsl;
             }
 
-            for (uint32_t i = 0; i < compile_info->includes_count; i++)
-            {
-                includer.pushExternalLocalDirectory(compile_info->includes[i]);
-            }
+            if (!invalid_include_root && compile_info->includes_count == 1)
+                includer.setRootDirectory(compile_info->includes[0]);
         }
 
         // Build the extension block.
@@ -720,13 +723,15 @@ extern "C"
         shader.setEnvInput(source,stage,glslang::EShClientVulkan,FORCED_VULKAN_VERSION);
         shader.setEnvTarget(glslang::EShTargetSpv, (glslang::EShTargetLanguageVersion)FORCED_SPV_VERSION);
 
-        if (!shader.parse(&Resources,
+        if (invalid_include_root || !shader.parse(&Resources,
                           110,          // use 100 for ES environment, 110 for desktop; this is the GLSL version, not SPIR-V or Vulkan
                           false,
                           messages,
                           includer))
         {
-            std::string log = shader.getInfoLog() ? shader.getInfoLog() : "";
+            std::string log = invalid_include_root
+                ? "GLSLCompiler requires a single non-empty include root, not a search path list."
+                : (shader.getInfoLog() ? shader.getInfoLog() : "");
             log += "\n[Assembled shader source]\n";
             log += FormatSourceWithLineNumbers(modified_source);
             return new SPVData(log.c_str(), shader.getInfoDebugLog());
@@ -968,7 +973,7 @@ extern "C"
 
     static GLSLCompilerInterface plug_in_interface
     {
-        1,                                                  //abi_version,与宿主 kGLSLCompilerInterfaceABIVersion=1 同步
+        2,                                                  // Root-only include contract; keep host ABI in sync.
 
         &InitShaderCompiler,
         &CloseShaderCompiler,

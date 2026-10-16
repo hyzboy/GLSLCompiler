@@ -10,7 +10,7 @@
  * Options:
  *   -o <file>       Output .spvf path  (single input only)
  *   -e <name>       Entry-point name   [default: main]
- *   -I <dir>        Add include search path (repeatable, also -I<dir> form)
+ *   -I <dir>        Set the single include root (also -I<dir> form)
  *   -D <macro>      Add preprocessor define (also -D<macro>=value form)
  *   --hlsl          Treat all inputs as HLSL
  *   --vulkan <ver>  Target Vulkan version: 1.0 (default) 1.1 1.2 1.3
@@ -242,7 +242,7 @@ struct Options {
     std::vector<std::string> inputs;
     std::string              output;                   /* -o              */
     std::string              entrypoint  = "main";     /* -e              */
-    std::vector<std::string> include_dirs;             /* -I              */
+    std::vector<std::string> include_dirs;             /* single -I root  */
     std::string              preamble;                 /* built from -D   */
     bool                     hlsl        = false;
     bool                     no_output   = false;
@@ -362,7 +362,7 @@ static void usage(const char *prog)
         "Options:\n"
         "  -o <file>       Output .spvf path (only valid with a single input)\n"
         "  -e <name>       Entry-point name  [default: main]\n"
-        "  -I <dir>        Add include search path (repeatable; -I<dir> also OK)\n"
+        "  -I <dir>        Set the single include root (-I<dir> also OK; not repeatable)\n"
         "  -D <macro>      Add preprocessor define  (-D<macro>=value also OK)\n"
         "  --hlsl          Treat all inputs as HLSL source\n"
         "  --vulkan <ver>  Target Vulkan version: 1.0 (default)  1.1  1.2  1.3\n"

@@ -158,10 +158,12 @@ set(VULKAN_SPIRV_LIBS
     ${SPIRV_TOOLS_LIBS})
 
 add_library(GLSLCompiler SHARED glsl2spv.cpp VKShaderParse.h GLSLCompiler.h)
+target_compile_features(GLSLCompiler PRIVATE cxx_std_17)
 
 target_link_libraries(GLSLCompiler PRIVATE ${VULKAN_SPIRV_LIBS})
 
 add_library(GLSLCompilerStatic STATIC glsl2spv.cpp VKShaderParse.h GLSLCompiler.h)
+target_compile_features(GLSLCompilerStatic PRIVATE cxx_std_17)
 
 target_link_libraries(GLSLCompilerStatic PRIVATE ${VULKAN_SPIRV_LIBS})
 

@@ -43,13 +43,18 @@
 |------|------|
 | GLSL → SPIR-V | 支持所有 Vulkan 着色器阶段，含光线追踪与网格着色器 |
 | HLSL → SPIR-V | 通过 glslang HLSL 前端支持，需指定入口函数名 |
-| `#include` 支持 | 通过 `DirStackFileIncluder` 实现嵌套 include 搜索 |
+| `#include` 支持 | 所有 include 仅相对唯一 root 解析，嵌套 include 同样适用；不搜索当前目录、包含文件目录或隐式 `common/`，拒绝绝对路径和越过 root 的 `..` |
 | Preamble 注入 | 支持在编译前注入宏定义等预处理文本 |
 | 着色器反射 | 输入/输出属性、描述符、Push Constant、Subpass Input 全覆盖 |
 | 统一二进制格式 | `CreateShaderFlat()` 将 SPIR-V + 反射数据打包成一个文件 |
 | 零依赖加载 | `ShaderFlatLoad()`（纯 C99，仅需 `<stdint.h>` + `<string.h>`）|
 | 跨平台 | Windows (MSVC/MinGW) / Linux / macOS / Android |
 | 插件式 API | `GetInterface()` 导出函数指针表，可动态加载 |
+
+`CompileInfo::includes_count` 只允许 0（不提供 include root）或 1；
+`includes[0]` 是唯一 root，多目录配置会报告编译错误。`spvfc -I <root>` 同样只允许一个
+root。`"..."` 与 `<...>` 均按 root 相对路径解析，公共文件须显式写出 `common/` 前缀。
+本契约对应插件接口版本 2，宿主与插件必须一起更新。
 
 ---
 
