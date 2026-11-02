@@ -523,17 +523,18 @@ typedef struct SFAttribute {
 | `mat4` | 4 | 4 |
 | `mat3x4` | 4 | 3 |
 
-#### `SFDescriptor`（36 字节）
+#### `SFDescriptor`（40 字节）
 
 描述符集资源（UBO、采样器、存储图像等）。
 
 ```c
 typedef struct SFDescriptor {
-    char    name[32];          // 资源名称（null 结尾）
-    uint8_t set;               // 描述符集编号
-    uint8_t binding;           // binding 点
+    char     name[32];         // 资源名称（null 结尾）
+    uint16_t set;              // 描述符集编号
+    uint16_t binding;          // binding 点
+    uint16_t array_size;       // 0=非数组；>0=数组第一维大小
     uint8_t descriptor_type;   // SF_DESCRIPTOR_TYPE_* 常量
-    uint8_t array_size;        // 0=非数组；>0=数组第一维大小
+    uint8_t reserved;          // 恒 0，保持 40 字节对齐
 } SFDescriptor;
 ```
 
@@ -843,13 +844,13 @@ free(buf);
 
 2. **名称长度**：所有资源名称（属性名、UBO 名等）截断为 31 个有效字符（固定字段 32 字节含 null 终止符）。
 
-3. **数组大小**：`SFDescriptor.array_size` 和 `array_size` 字段均为 `uint8_t`，最大值为 255。超大数组需自行处理。
+3. **数组大小**：`SFDescriptor` 的 `set`/`binding`/`array_size` 字段为 `uint16_t`（v3 起；v2 曾是 `uint8_t`，存在 ≥256 静默截断问题），最大值为 65535。超限值在编译期饱和到 65535 而不是回绕。
 
 4. **Subpass Input**：`SFSubpassInput` 结构存储 `input_attachment_index` 和 `binding`，均为 `uint8_t`，最大值 255，符合 Vulkan 规范限制。
 
 5. **HLSL 编译**：使用 HLSL 时必须在 `CompileInfo.entrypoint` 中指定入口函数名，并将 `shader_type` 设为 `ShaderLanguageType::HLSL`（值为 1）。
 
-6. **文件格式版本**：当前 `SF_VERSION = 2`。`ShaderFlatLoad()` 会严格校验版本号，旧版（v1）文件不被接受。
+6. **文件格式版本**：当前 `SF_VERSION = 3`。`ShaderFlatLoad()` 会严格校验版本号，旧版（v1/v2）文件不被接受，需重新编译生成。
 
 7. **字节序**：文件格式使用本机字节序写入。在大端与小端平台之间交换文件时需额外处理（当前主流平台均为小端，一般无需关注）。
 

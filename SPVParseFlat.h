@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 /*
- * SPVParseFlat.h  —  "Shader Flat File" format, version 2
+ * SPVParseFlat.h  —  "Shader Flat File" format, version 3
  *
  * PURPOSE
  *   A single flat binary that bundles the raw SPIRV binary together with all
@@ -31,7 +31,8 @@
  *
  * POD TYPE SIZES (pack=1)
  *   SFAttribute    36 B   name[32] + location + basetype + vec_size + col_count
- *   SFDescriptor   36 B   name[32] + set + binding + descriptor_type + array_size
+ *   SFDescriptor   40 B   name[32] + set(u16) + binding(u16) + array_size(u16)
+ *                         + descriptor_type(u8) + reserved(u8)
  *   SFPushConstant 40 B   name[32] + offset(u32) + size(u32)
  *   SFSubpassInput 34 B   name[32] + input_attachment_index + binding
  *   ShaderFlatHeader 84 B magic + version + total_size + shader_stage +
@@ -58,7 +59,7 @@
 
 /* magic: 'S','P','V','F' in little-endian = 0x46565053 */
 #define SF_MAGIC    0x46565053u
-#define SF_VERSION  2u
+#define SF_VERSION  3u
 
 #define SF_NAME_MAX_LENGTH       32u
 #define SF_ENTRYPOINT_MAX_LENGTH 64u
@@ -104,14 +105,20 @@ typedef struct SFAttribute {
     uint8_t col_count;                /* col count: 1=scalar/vec, >1=matrix   */
 } SFAttribute;                        /* 36 bytes                             */
 
-/* Descriptor-set resource (uniform buffer, sampler, storage image, etc.) */
+/* Descriptor-set resource (uniform buffer, sampler, storage image, etc.)
+ * v3：set/binding/array_size 由 u8 加宽为 u16。uint8 会在 set≥8 或
+ * binding≥256（bindless/大数组时代）时**静默回绕**，反射出的绑定号
+ * 与真实 SPIR-V 不符；u16 覆盖 Vulkan 实践上限（maxBoundDescriptors 等
+ * 属性均为 uint32，但可观察实现远小于 2^16）。descriptor_type 保持 u8
+ * （枚举 ≤10），尾部补 1 字节 reserved 对齐回 40 B 并保持 2 字节自然对齐。 */
 typedef struct SFDescriptor {
-    char    name[SF_NAME_MAX_LENGTH]; /* null-terminated resource name        */
-    uint8_t set;                      /* descriptor set index                 */
-    uint8_t binding;                  /* binding point                        */
-    uint8_t descriptor_type;          /* SF_DESCRIPTOR_TYPE_* constant        */
-    uint8_t array_size;               /* 0 = non-array; >0 = array dimension  */
-} SFDescriptor;                       /* 36 bytes                             */
+    char     name[SF_NAME_MAX_LENGTH]; /* null-terminated resource name        */
+    uint16_t set;                      /* descriptor set index                 */
+    uint16_t binding;                  /* binding point                        */
+    uint16_t array_size;               /* 0 = non-array; >0 = array dimension  */
+    uint8_t  descriptor_type;          /* SF_DESCRIPTOR_TYPE_* constant        */
+    uint8_t  reserved;                 /* 恒 0，保持 40 字节布局               */
+} SFDescriptor;                       /* 40 bytes                             */
 
 /* Push-constant block */
 typedef struct SFPushConstant {

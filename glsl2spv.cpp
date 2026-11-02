@@ -269,11 +269,14 @@ struct ShaderAttributeArray
 
 struct Descriptor
 {
+    // 与 SPVParseFlat.h::SFDescriptor(v3) 字节一致：
+    // name[32] + set(u16) + binding(u16) + array_size(u16) + descriptor_type(u8) + reserved(u8)
     char name[SHADER_RESOURCE_NAME_MAX_LENGTH];
-    uint8_t set;
-    uint8_t binding;
+    uint16_t set;
+    uint16_t binding;
+    uint16_t array_size;
     uint8_t descriptor_type;
-    uint8_t array_size;
+    uint8_t reserved;
 };
 
 struct PushConstant
@@ -429,6 +432,14 @@ void OutputShaderAttributes(ShaderAttributeArray *ssd,ShaderParse *sp,const SPVR
     }
 }
 
+// SPIRV-Cross 反射的 set/binding/array_size 是 uint32；flat v3 用 uint16 承载。
+// 超限不再静默回绕（v2 的 uint8 截断会产出错误绑定号），显式饱和到 0xFFFF。
+static inline uint16_t ClampReflectToU16(uint32_t value)
+{
+    return value > 0xFFFFu ? static_cast<uint16_t>(0xFFFFu)
+                           : static_cast<uint16_t>(value);
+}
+
 void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,const SPVResVector &res,uint8_t descriptor_type)
 {
     size_t count=res.size();
@@ -442,10 +453,11 @@ void OutputShaderResource(ShaderResourceData<Descriptor> *ssd,ShaderParse *sp,co
     for(const spirv_cross::Resource &obj:res)
     {
         strcpy(sr->name,sp->GetName(obj).c_str());
-        sr->set = sp->GetDescriptorSet(obj);
-        sr->binding         = sp->GetBinding(obj);
+        sr->set             = ClampReflectToU16(sp->GetDescriptorSet(obj));
+        sr->binding         = ClampReflectToU16(sp->GetBinding(obj));
+        sr->array_size      = ClampReflectToU16(sp->GetArraySize(obj));
         sr->descriptor_type = descriptor_type;
-        sr->array_size      = (uint8_t)sp->GetArraySize(obj);
+        sr->reserved        = 0;
 
         ++sr;
     }
