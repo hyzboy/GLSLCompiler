@@ -33,6 +33,7 @@ struct CompileInfo
     const char *        preamble;        /* text prepended before source     */
     uint32_t            vulkan_version;  /* glslang EShTargetVulkan_x_y, 0=default */
     uint32_t            spv_version;     /* glslang EShTargetSpv_x_y, 0=default    */
+    uint32_t            optimize;        /* enable SPIR-V optimization (0=off, 1=on) */
 };
 
 /* -----------------------------------------------------------------------
