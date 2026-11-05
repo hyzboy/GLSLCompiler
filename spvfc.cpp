@@ -16,6 +16,7 @@
  *   --hlsl          Treat all inputs as HLSL
  *   --vulkan <ver>  Target Vulkan version: 1.0 1.1 1.2 1.3 1.4 (default: 1.4)
  *   --spv <ver>     Target SPIR-V version: 1.0 .. 1.6 (default: 1.6)
+ *   -O              Optimize generated SPIR-V
  *   --no-output     Compile + reflect but do not write .spvf file
  *   --no-reflect    Suppress reflection text output
  *   --quiet         Suppress informational messages (errors still printed)
@@ -254,6 +255,7 @@ struct Options {
     bool                     no_output   = false;
     bool                     no_reflect  = false;
     bool                     quiet       = false;
+    bool                     optimize    = false;
     uint32_t                 vulkan_ver  = (1u << 22) | (4u << 12); /* Vulkan 1.4 */
     uint32_t                 spv_ver     = (1u << 16) | (6u << 8);  /* SPIR-V 1.6 */
 };
@@ -298,6 +300,7 @@ static int process_file(const std::string &input,
     ci.preamble       = opts.preamble.empty() ? nullptr : opts.preamble.c_str();
     ci.vulkan_version = opts.vulkan_ver;
     ci.spv_version    = opts.spv_ver;
+    ci.optimize       = opts.optimize;
 
     /* 3. Compile to SPIR-V */
     SPVData *spv = CompileFromPath(stage, input.c_str(), &ci);
@@ -373,6 +376,7 @@ static void usage(const char *prog)
         "  --hlsl          Treat all inputs as HLSL source\n"
         "  --vulkan <ver>  Target Vulkan version: 1.0  1.1  1.2  1.3  1.4 (default: 1.4)\n"
         "  --spv    <ver>  Target SPIR-V version: 1.0  1.1 .. 1.6 (default: 1.6)\n"
+        "  -O              Optimize generated SPIR-V\n"
         "  --no-output     Compile and reflect but do not write .spvf files\n"
         "  --no-reflect    Suppress reflection text output\n"
         "  --quiet         Suppress informational messages (errors still shown)\n"
@@ -438,6 +442,7 @@ int main(int argc, char *argv[])
         if (strcmp(a, "--no-output") == 0) { opts.no_output  = true;  continue; }
         if (strcmp(a, "--no-reflect")== 0) { opts.no_reflect = true;  continue; }
         if (strcmp(a, "--quiet")     == 0) { opts.quiet      = true;  continue; }
+        if (strcmp(a, "-O")          == 0) { opts.optimize  = true;  continue; }
 
         /* --vulkan <ver> */
         if (strcmp(a, "--vulkan") == 0 && i + 1 < argc)

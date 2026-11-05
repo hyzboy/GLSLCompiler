@@ -43,6 +43,7 @@
 |------|------|
 | GLSL → SPIR-V | 支持所有 Vulkan 着色器阶段，含光线追踪与网格着色器 |
 | HLSL → SPIR-V | 通过 glslang HLSL 前端支持，需指定入口函数名 |
+| SPIR-V 优化 | 可通过 `CompileInfo::optimize` 或 `spvfc -O` 启用 |
 | `#include` 支持 | 所有 include 仅相对唯一 root 解析，嵌套 include 同样适用；不搜索当前目录、包含文件目录或隐式 `common/`，拒绝绝对路径和越过 root 的 `..` |
 | Preamble 注入 | 支持在编译前注入宏定义等预处理文本 |
 | 着色器反射 | 输入/输出属性、描述符、Push Constant、Subpass Input 全覆盖 |
@@ -54,7 +55,7 @@
 `CompileInfo::includes_count` 只允许 0（不提供 include root）或 1；
 `includes[0]` 是唯一 root，多目录配置会报告编译错误。`spvfc -I <root>` 同样只允许一个
 root。`"..."` 与 `<...>` 均按 root 相对路径解析，公共文件须显式写出 `common/` 前缀。
-本契约对应插件接口版本 2，宿主与插件必须一起更新。
+本契约对应插件接口版本 3；`CompileInfo` 增加了优化选项，宿主与插件必须一起更新。
 
 ---
 
@@ -213,8 +214,12 @@ typedef struct CompileInfo {
     const char *        preamble;        // 注入到着色器最前面的文本（NULL 跳过）
     const uint32_t      vulkan_version;  // 目标 Vulkan 版本，如 glslang::EShTargetVulkan_1_2
     const uint32_t      spv_version;     // 目标 SPIR-V 版本，如 glslang::EShTargetSpv_1_5
+    uint32_t            optimize;        // SPIR-V 优化：0=关闭（默认），1=开启
 } CompileInfo;
 ```
+
+启用 `optimize` 会请求 glslang 对生成的 SPIR-V 执行常规优化，对应 `glslangValidator -O`；默认关闭。
+`CompileInfo` 应进行零初始化，以确保未指定的选项为默认值。
 
 **`shader_type` 取值：**
 
@@ -277,6 +282,7 @@ ci.shader_type   = 0;            // GLSL
 ci.entrypoint    = NULL;
 ci.vulkan_version = 100;         // Vulkan 1.0
 ci.spv_version    = 0x00010000;  // SPIR-V 1.0
+ci.optimize      = 1;            // 启用 SPIR-V 优化（对应 glslangValidator -O）
 
 SPVData *spv = Shader2SPV(VK_SHADER_STAGE_VERTEX_BIT, glsl_source, &ci);
 if (!spv->result) {

@@ -811,7 +811,9 @@ extern "C"
 
         std::vector<uint32_t> spirv;
 
-        glslang::GlslangToSpv(*program.getIntermediate(stage),spirv);
+        glslang::SpvOptions spv_options;
+        spv_options.disableOptimizer = !(compile_info && compile_info->optimize);
+        glslang::GlslangToSpv(*program.getIntermediate(stage), spirv, &spv_options);
 
         return(new SPVData(spirv));
       }
@@ -1030,7 +1032,7 @@ extern "C"
 
     static GLSLCompilerInterface plug_in_interface
     {
-        2,                                                  // Root-only include contract; keep host ABI in sync.
+        3,                                                  // CompileInfo optimization option; keep host ABI in sync.
 
         &InitShaderCompiler,
         &CloseShaderCompiler,
